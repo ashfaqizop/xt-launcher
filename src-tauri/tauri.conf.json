@@ -1,0 +1,77 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "XT Launcher",
+  "version": "0.1.0",
+  "identifier": "app.xtlauncher.launcher",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "splash",
+        "title": "XT Launcher",
+        "url": "splash.html",
+        "width": 460,
+        "height": 180,
+        "center": true,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "decorations": false,
+        "shadow": true,
+        "focus": true,
+        "backgroundColor": "#100f0f"
+      },
+      {
+        "label": "main",
+        "title": "XT Launcher",
+        "url": "index.html",
+        "width": 1000,
+        "height": 620,
+        "minWidth": 860,
+        "minHeight": 540,
+        "center": true,
+        "visible": false,
+        "backgroundColor": "#100f0f"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "XT",
+    "shortDescription": "A clean, fast Minecraft Java launcher",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2RkE4QTA4RTVDOEQzNEQKUldSTjA4amxDSXI2RnFPMGVWTWVsZVowTUsyVXJIaS8xQTh0bUJKNDJBNnNCZVEyblZWUFJYYVkK",
+      "endpoints": [
+        "https://github.com/ashfaqizop/xt-launcher/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

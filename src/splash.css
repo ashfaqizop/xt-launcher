@@ -1,0 +1,51 @@
+m3e-theme {
+  display: block;
+  height: 100%;
+}
+
+.splash {
+  height: 100vh;
+  padding: 0 28px 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--md-sys-color-on-surface, #ece0dd);
+  background: var(--md-sys-color-surface, #100f0f);
+}
+
+.splash-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.splash-logo {
+  height: 40px;
+  width: auto;
+  margin-bottom: 10px;
+}
+
+.splash h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.splash p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 450;
+  color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#spinner {
+  flex: none;
+  font-size: 56px; /* m3e-loading-indicator scales with font-size */
+}

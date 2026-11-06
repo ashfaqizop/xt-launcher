@@ -1,0 +1,10 @@
+import '@fontsource-variable/bricolage-grotesque/wght.css';
+import '@m3e/web/theme';
+import './styles/base.css';
+
+import { mount } from 'svelte';
+import App from './App.svelte';
+
+const app = mount(App, { target: document.getElementById('app')! });
+
+export default app;

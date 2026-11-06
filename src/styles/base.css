@@ -1,0 +1,32 @@
+/* Shared base. Bricolage Grotesque is the only typeface in XT Launcher. */
+:root {
+  --xt-font: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  --xt-bg: #100f0f;
+  --xt-brand: #c23a24;
+  color-scheme: dark light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--xt-bg);
+  font-family: var(--xt-font);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.log
+.DS_Store
+# updater signing keys must never be committed
+*.key
+*.key.pub.bak
