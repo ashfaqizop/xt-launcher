@@ -1,11 +1,14 @@
-//! Fabric and Quilt: fetch the loader profile for a Minecraft version from the loader's
-//! meta server and store it as a local version that inherits the vanilla one.
+//! Loader installs. Fabric and Quilt: fetch the profile for a Minecraft version from the
+//! loader's meta server and store it as a local version that inherits the vanilla one.
+//! Forge and NeoForge are handled by the installer module.
 
 use super::http;
+use super::installer;
 use super::mojang::VersionJson;
 use super::paths::Paths;
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
+use tauri::AppHandle;
 
 #[derive(Deserialize)]
 struct LoaderEntry {
@@ -19,8 +22,16 @@ struct LoaderInfo {
     stable: Option<bool>,
 }
 
-/// Install (or refresh) the loader profile and return its version id.
-pub async fn install(paths: &Paths, kind: &str, mc: &str) -> Result<String> {
+/// Install (or refresh) the loader and return the version id to launch.
+pub async fn install(app: &AppHandle, paths: &Paths, kind: &str, mc: &str) -> Result<String> {
+    match kind {
+        "fabric" | "quilt" => install_meta(paths, kind, mc).await,
+        "forge" | "neoforge" => installer::install(app, paths, kind, mc).await,
+        other => Err(anyhow!("{other} is not supported")),
+    }
+}
+
+async fn install_meta(paths: &Paths, kind: &str, mc: &str) -> Result<String> {
     let base = match kind {
         "fabric" => "https://meta.fabricmc.net/v2/versions/loader",
         "quilt" => "https://meta.quiltmc.org/v3/versions/loader",

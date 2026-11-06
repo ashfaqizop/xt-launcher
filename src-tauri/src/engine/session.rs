@@ -85,7 +85,7 @@ pub struct AccountInfo {
 #[serde(rename_all = "camelCase")]
 pub struct LaunchRequest {
     pub profile_id: String,
-    /// vanilla | fabric | quilt
+    /// vanilla | fabric | quilt | forge | neoforge
     pub loader: String,
     /// A Minecraft version id, or "latest" for the newest release
     pub mc: String,
@@ -100,6 +100,9 @@ pub struct LaunchRequest {
     /// default | high | low
     #[serde(default)]
     pub gpu: Option<String>,
+    /// Extra JVM arguments for this profile, space separated
+    #[serde(default)]
+    pub jvm_args: Option<String>,
     /// Azure client id for Microsoft accounts (overrides the built-in one)
     #[serde(default)]
     pub ms_client_id: Option<String>,
@@ -191,7 +194,7 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     };
     let version_id = match req.loader.as_str() {
         "vanilla" => mc_id.clone(),
-        kind => loaders::install(&paths, kind, &mc_id).await?,
+        kind => loaders::install(app, &paths, kind, &mc_id).await?,
     };
 
     let (version, root_id) = install::resolve(&paths, &version_id).await?;
@@ -225,12 +228,20 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     )
     .await?;
     let account = resolved.account;
+    let mut extra_jvm = resolved.extra_jvm;
+    extra_jvm.extend(
+        req.jvm_args
+            .as_deref()
+            .unwrap_or("")
+            .split_whitespace()
+            .map(String::from),
+    );
     let options = Options {
         ram_mb: req.ram_mb.unwrap_or(4096).clamp(512, 65536),
         width: req.width.max(320),
         height: req.height.max(240),
         fullscreen: req.fullscreen,
-        extra_jvm: resolved.extra_jvm,
+        extra_jvm,
     };
     let args = launch::build_args(&paths, &version, &root_id, &natives, &game_dir, &account, &options)?;
 

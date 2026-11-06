@@ -1,4 +1,4 @@
-//! Accounts: Microsoft (device code), Ely.by (launcher API + authlib-injector) and offline.
+//! Accounts: Microsoft (device code), Ely.by (OAuth in the browser + authlib-injector) and offline.
 //! Secrets are kept in the Windows Credential Manager; the UI only ever sees names and ids.
 
 mod ely;
@@ -34,13 +34,6 @@ pub struct AccountResult {
     pub name: String,
     pub uuid: String,
     pub kind: String,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
-pub enum LoginOutcome {
-    Done { account: AccountResult },
-    TwoFactor,
 }
 
 #[derive(Serialize, Clone)]
@@ -115,38 +108,43 @@ pub async fn ms_login(
 }
 
 #[tauri::command]
-pub fn ms_cancel(state: State<'_, AuthState>) {
+pub fn auth_cancel(state: State<'_, AuthState>) {
     state.cancel.store(true, Ordering::SeqCst);
 }
 
-#[tauri::command]
-pub async fn ely_login(
-    app: AppHandle,
-    username: String,
-    password: String,
-    totp: Option<String>,
-) -> Result<LoginOutcome, String> {
-    let paths = Paths::new(&app).map_err(|e| e.to_string())?;
-    let client_token = ely::client_token(&paths)
-        .await
-        .map_err(|e| format!("{e:#}"))?;
+#[derive(Serialize, Clone)]
+struct OpenUrlPayload {
+    url: String,
+}
 
-    match ely::authenticate(username.trim(), &password, totp.as_deref(), &client_token).await {
-        Ok(session) => {
-            let id = format!("ely-{}", session.uuid);
-            store::save(&id, &session.access_token).map_err(|e| format!("{e:#}"))?;
-            Ok(LoginOutcome::Done {
-                account: AccountResult {
-                    id,
-                    name: session.name,
-                    uuid: session.uuid,
-                    kind: "elyby".to_string(),
-                },
-            })
-        }
-        Err(ely::ElyError::TwoFactor) => Ok(LoginOutcome::TwoFactor),
-        Err(ely::ElyError::Other(e)) => Err(format!("{e:#}")),
-    }
+async fn run_ely_login(app: &AppHandle, state: &AuthState) -> Result<AccountResult> {
+    state.cancel.store(false, Ordering::SeqCst);
+
+    let pending = ely::begin().await?;
+    let _ = app.emit(
+        "auth-open-url",
+        OpenUrlPayload {
+            url: pending.url.clone(),
+        },
+    );
+
+    let session = ely::complete(pending, &state.cancel).await?;
+    let id = format!("ely-{}", session.uuid);
+    store::save(&id, &session.refresh_token)?;
+    Ok(AccountResult {
+        id,
+        name: session.name,
+        uuid: session.uuid,
+        kind: "elyby".to_string(),
+    })
+}
+
+/// Sign in with Ely.by: opens the browser (via the UI), waits for the authorization.
+#[tauri::command]
+pub async fn ely_login(app: AppHandle, state: State<'_, AuthState>) -> Result<AccountResult, String> {
+    run_ely_login(&app, &state)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// Forget the stored tokens of a removed account.
@@ -200,11 +198,10 @@ pub async fn resolve_for_launch(
             })
         }
         "elyby" => {
-            let access_token = store::load(id)?
+            let refresh_token = store::load(id)?
                 .ok_or_else(|| anyhow!("This Ely.by account needs to sign in again."))?;
-            let client_token = ely::client_token(paths).await?;
-            let session = ely::refresh(&access_token, &client_token).await?;
-            store::save(id, &session.access_token)?;
+            let session = ely::refresh(&refresh_token).await?;
+            store::save(id, &session.refresh_token)?;
             let jar = ensure_injector(paths).await?;
             Ok(Resolved {
                 account: Account {

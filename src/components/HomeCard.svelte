@@ -6,7 +6,7 @@
   import { engine, openFolder, play, stop } from '../lib/engine.svelte';
   import {
     ACCOUNT_LABEL,
-    PROFILES,
+    allProfiles,
     currentAccount,
     currentProfile,
     data,
@@ -55,7 +55,7 @@
     <Icon name="down" size={22} />
   </button>
   <m3e-menu id="profile-menu">
-    {#each PROFILES as p (p.id)}
+    {#each allProfiles() as p (p.id)}
       <m3e-menu-item onclick={() => (data.profileId = p.id)}>{p.name} · {profileSubtitle(p)}</m3e-menu-item>
     {/each}
     <m3e-divider></m3e-divider>

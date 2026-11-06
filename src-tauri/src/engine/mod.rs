@@ -4,6 +4,7 @@ pub mod auth;
 mod crash;
 mod http;
 mod install;
+mod installer;
 mod java;
 mod launch;
 mod loaders;

@@ -3,7 +3,7 @@
   import Icon from '../lib/Icon.svelte';
   import Panel from './Panel.svelte';
   import { ACCOUNT_LABEL, addOfflineAccount, data, removeAccount } from '../lib/data.svelte';
-  import { cancelMicrosoft, elyLogin, forgetSecrets, initAuth, microsoftLogin, msFlow } from '../lib/auth.svelte';
+  import { cancelAuth, elyFlow, elyLogin, forgetSecrets, initAuth, microsoftLogin, msFlow } from '../lib/auth.svelte';
   import { settings } from '../lib/settings.svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { inTauri } from '../lib/engine.svelte';
@@ -14,14 +14,6 @@
   // offline
   let name = $state('');
   let offlineError = $state('');
-
-  // ely.by
-  let elyUser = $state('');
-  let elyPass = $state('');
-  let elyTotp = $state('');
-  let elyNeedsCode = $state(false);
-  let elyBusy = $state(false);
-  let elyError = $state('');
 
   onMount(() => void initAuth());
 
@@ -40,21 +32,8 @@
     mode = 'none';
   }
 
-  async function submitEly(e: Event) {
-    e.preventDefault();
-    elyBusy = true;
-    elyError = '';
-    const r = await elyLogin(elyUser, elyPass, elyNeedsCode ? elyTotp : undefined);
-    elyBusy = false;
-    if (r.status === 'done') {
-      elyUser = elyPass = elyTotp = '';
-      elyNeedsCode = false;
-      mode = 'none';
-    } else if (r.status === 'twoFactor') {
-      elyNeedsCode = true;
-    } else {
-      elyError = r.message;
-    }
+  async function signInElyby() {
+    if (await elyLogin()) mode = 'none';
   }
 
   async function signInMicrosoft() {
@@ -117,7 +96,7 @@
         {/if}
         <div class="actions">
           {#if msFlow.url}<m3e-button variant="tonal" onclick={() => open(msFlow.url)}>Open page</m3e-button>{/if}
-          <m3e-button variant="text" onclick={cancelMicrosoft}>Cancel</m3e-button>
+          <m3e-button variant="text" onclick={cancelAuth}>Cancel</m3e-button>
         </div>
       {:else}
         {#if needsClientId}
@@ -147,29 +126,25 @@
   {/if}
 
   {#if mode === 'elyby'}
-    <form class="box" onsubmit={submitEly}>
-      <m3e-form-field variant="outlined" class="field">
-        <label slot="label" for="ely-user">Username or email</label>
-        <input id="ely-user" bind:value={elyUser} autocomplete="username" spellcheck="false" />
-      </m3e-form-field>
-      <m3e-form-field variant="outlined" class="field">
-        <label slot="label" for="ely-pass">Password</label>
-        <input id="ely-pass" type="password" bind:value={elyPass} autocomplete="current-password" />
-      </m3e-form-field>
-      {#if elyNeedsCode}
-        <m3e-form-field variant="outlined" class="field">
-          <label slot="label" for="ely-totp">Two-factor code</label>
-          <input id="ely-totp" bind:value={elyTotp} inputmode="numeric" autocomplete="one-time-code" maxlength="8" />
-        </m3e-form-field>
+    <div class="box">
+      {#if elyFlow.waiting}
+        <p>Finish signing in on the Ely.by page that just opened in your browser, then approve XT Launcher.</p>
+        <p class="hint muted">Waiting for you…</p>
+        <div class="actions">
+          {#if elyFlow.url}<m3e-button variant="tonal" onclick={() => open(elyFlow.url)}>Open page again</m3e-button>{/if}
+          <m3e-button variant="text" onclick={cancelAuth}>Cancel</m3e-button>
+        </div>
+      {:else}
+        <p class="muted">
+          Sign in with your Ely.by account. Your browser opens, you log in and authorize, and you're connected.
+          XT Launcher never sees your password.
+        </p>
+        <div class="actions">
+          <m3e-button variant="filled" onclick={signInElyby}>Sign in with Ely.by</m3e-button>
+        </div>
       {/if}
-      {#if elyError}<p class="error" role="alert">{elyError}</p>{/if}
-      <div class="actions">
-        <m3e-button type="submit" variant="filled" disabled={elyBusy || !elyUser || !elyPass}>
-          {elyBusy ? 'Signing in…' : 'Sign in'}
-        </m3e-button>
-      </div>
-      <p class="hint muted">Your password is sent only to authserver.ely.by and is never stored.</p>
-    </form>
+      {#if elyFlow.error}<p class="error" role="alert">{elyFlow.error}</p>{/if}
+    </div>
   {/if}
 
   {#if mode === 'offline'}

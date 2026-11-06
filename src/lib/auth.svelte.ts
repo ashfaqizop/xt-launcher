@@ -69,28 +69,42 @@ export async function microsoftLogin(): Promise<boolean> {
   }
 }
 
-export async function cancelMicrosoft() {
+/** Cancel a sign-in that is waiting for the browser (Microsoft or Ely.by). */
+export async function cancelAuth() {
   try {
-    await invoke('ms_cancel');
+    await invoke('auth_cancel');
   } catch {
     /* ignore */
   }
 }
 
-export type ElyResult = { status: 'done' } | { status: 'twoFactor' } | { status: 'error'; message: string };
+export const elyFlow = $state({ waiting: false, url: '', error: '' });
 
-export async function elyLogin(username: string, password: string, totp?: string): Promise<ElyResult> {
-  if (!inTauri) return { status: 'error', message: 'Ely.by sign-in works in the desktop app.' };
+/** Ely.by OAuth: opens the browser, the user logs in and authorizes, then we are connected. */
+export async function elyLogin(): Promise<boolean> {
+  if (!inTauri) {
+    elyFlow.error = 'Ely.by sign-in works in the desktop app.';
+    return false;
+  }
+  elyFlow.error = '';
+  elyFlow.url = '';
+  elyFlow.waiting = true;
+
+  const unlisten = await listen<{ url: string }>('auth-open-url', (e) => {
+    elyFlow.url = e.payload.url;
+    void openUrl(e.payload.url).catch(() => {});
+  });
+
   try {
-    const out = await invoke<{ status: 'done'; account: AccountResult } | { status: 'twoFactor' }>(
-      'ely_login',
-      { username, password, totp: totp || null },
-    );
-    if (out.status === 'twoFactor') return { status: 'twoFactor' };
-    addRemoteAccount(toAccount(out.account));
-    return { status: 'done' };
+    const result = await invoke<AccountResult>('ely_login');
+    addRemoteAccount(toAccount(result));
+    return true;
   } catch (err) {
-    return { status: 'error', message: String(err) };
+    elyFlow.error = String(err);
+    return false;
+  } finally {
+    unlisten();
+    elyFlow.waiting = false;
   }
 }
 

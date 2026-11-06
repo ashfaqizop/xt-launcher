@@ -32,7 +32,7 @@ pub fn run() {
             engine::session::list_versions,
             engine::session::open_dir,
             engine::auth::ms_login,
-            engine::auth::ms_cancel,
+            engine::auth::auth_cancel,
             engine::auth::ms_has_builtin_client,
             engine::auth::ely_login,
             engine::auth::forget_account,

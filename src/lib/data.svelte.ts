@@ -19,7 +19,12 @@ export interface Profile {
   name: string;
   kind: 'xt' | 'xt-plus' | 'custom';
   loader: Loader;
+  /** A Minecraft version id, or "latest" for the newest release */
   mc: string;
+  /** Per-profile memory override in MB (null = use the global setting) */
+  ramMb?: number | null;
+  /** Extra JVM arguments, space separated */
+  jvmArgs?: string;
 }
 
 export const ACCOUNT_LABEL: Record<AccountType, string> = {
@@ -36,17 +41,22 @@ export const LOADER_LABEL: Record<Loader, string> = {
   neoforge: 'NeoForge',
 };
 
-export const PROFILES: Profile[] = [
+/** Built in and not editable; duplicate one to customize it. */
+export const BUILTIN_PROFILES: Profile[] = [
   { id: 'xt', name: 'XT Optimized', kind: 'xt', loader: 'fabric', mc: 'latest' },
   { id: 'xt-plus', name: 'XT Optimized+', kind: 'xt-plus', loader: 'fabric', mc: 'latest' },
-  { id: 'release', name: 'Vanilla Release', kind: 'custom', loader: 'vanilla', mc: 'latest' },
-  { id: 'fabric', name: 'Fabric', kind: 'custom', loader: 'fabric', mc: 'latest' },
+];
+
+const SEED_PROFILES: Profile[] = [
+  { id: 'vanilla', name: 'Vanilla', kind: 'custom', loader: 'vanilla', mc: 'latest' },
 ];
 
 interface Persisted {
   accounts: Account[];
   accountId: string;
   profileId: string;
+  /** User-created profiles */
+  profiles: Profile[];
 }
 
 const KEY = 'xt.data.v1';
@@ -55,17 +65,25 @@ function load(): Persisted {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const p = JSON.parse(raw) as Persisted;
+      const p = JSON.parse(raw) as Partial<Persisted>;
+      const profiles = Array.isArray(p.profiles) ? p.profiles : SEED_PROFILES.map((x) => ({ ...x }));
+      const known = [...BUILTIN_PROFILES, ...profiles];
       return {
         accounts: Array.isArray(p.accounts) ? p.accounts : [],
         accountId: p.accountId ?? '',
-        profileId: PROFILES.some((x) => x.id === p.profileId) ? p.profileId : 'xt',
+        profileId: known.some((x) => x.id === p.profileId) ? (p.profileId as string) : 'xt',
+        profiles,
       };
     }
   } catch {
     /* ignore */
   }
-  return { accounts: [], accountId: '', profileId: 'xt' };
+  return {
+    accounts: [],
+    accountId: '',
+    profileId: 'xt',
+    profiles: SEED_PROFILES.map((x) => ({ ...x })),
+  };
 }
 
 export const data: Persisted = $state(load());
@@ -82,7 +100,35 @@ $effect.root(() => {
 });
 
 export const currentAccount = () => data.accounts.find((a) => a.id === data.accountId) ?? null;
-export const currentProfile = () => PROFILES.find((p) => p.id === data.profileId) ?? PROFILES[0];
+export const allProfiles = (): Profile[] => [...BUILTIN_PROFILES, ...data.profiles];
+export const currentProfile = () =>
+  allProfiles().find((p) => p.id === data.profileId) ?? BUILTIN_PROFILES[0];
+
+export function newProfile(): Profile {
+  return { id: crypto.randomUUID(), name: '', kind: 'custom', loader: 'vanilla', mc: 'latest', ramMb: null, jvmArgs: '' };
+}
+
+/** Add or update a custom profile. */
+export function saveProfile(p: Profile) {
+  const i = data.profiles.findIndex((x) => x.id === p.id);
+  if (i >= 0) data.profiles[i] = { ...p, kind: 'custom' };
+  else data.profiles.push({ ...p, kind: 'custom' });
+}
+
+export function duplicateProfile(id: string): string | null {
+  const src = allProfiles().find((p) => p.id === id);
+  if (!src) return null;
+  const copy: Profile = { ...src, id: crypto.randomUUID(), name: `${src.name} copy`, kind: 'custom' };
+  data.profiles.push(copy);
+  return copy.id;
+}
+
+export function deleteProfile(id: string) {
+  const i = data.profiles.findIndex((p) => p.id === id);
+  if (i < 0) return;
+  data.profiles.splice(i, 1);
+  if (data.profileId === id) data.profileId = 'xt';
+}
 
 export function profileSubtitle(p: Profile) {
   const mc = p.mc === 'latest' ? versions.latestRelease || 'Latest release' : p.mc;

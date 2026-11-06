@@ -1,154 +1,324 @@
-//! Ely.by accounts through the launcher API at authserver.ely.by (login with password and
-//! optional two-factor code, then refreshable access tokens). Used together with
-//! authlib-injector so the game talks to Ely.by's session server.
+//! Ely.by sign-in with OAuth 2.0 (authorization code + PKCE, public client `xt-launcher`).
+//!
+//! The launcher opens the browser, the user logs in and authorizes, Ely.by redirects to a
+//! one-shot loopback server on 127.0.0.1, and the code is exchanged for tokens. The access
+//! token carries the `minecraft_server_session` scope, so it is also the game's session
+//! token (used through authlib-injector).
 
 use crate::engine::http;
-use crate::engine::paths::Paths;
 use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
+pub const CLIENT_ID: &str = "xt-launcher";
 pub const API_ROOT: &str = "https://authserver.ely.by/api/authlib-injector";
-const BASE: &str = "https://authserver.ely.by";
+const AUTHORIZE_URL: &str = "https://account.ely.by/oauth2/v1";
+const TOKEN_URL: &str = "https://account.ely.by/api/oauth2/v1/token";
+const INFO_URL: &str = "https://account.ely.by/api/account/v1/info";
+const SCOPE: &str = "account_info offline_access minecraft_server_session";
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct ElySession {
     pub access_token: String,
+    pub refresh_token: String,
     pub uuid: String,
     pub name: String,
 }
 
-pub enum ElyError {
-    /// The account has two-factor auth enabled; ask for the code and retry.
-    TwoFactor,
-    Other(anyhow::Error),
+fn random_string(bytes: usize) -> Result<String> {
+    let mut buf = vec![0u8; bytes];
+    getrandom::getrandom(&mut buf).map_err(|e| anyhow!("random number generator: {e}"))?;
+    Ok(URL_SAFE_NO_PAD.encode(&buf))
 }
 
-impl From<anyhow::Error> for ElyError {
-    fn from(e: anyhow::Error) -> Self {
-        ElyError::Other(e)
+/// One pending sign-in: PKCE secrets, the loopback listener and the URL to open.
+pub struct Pending {
+    pub url: String,
+    listener: TcpListener,
+    redirect_uri: String,
+    verifier: String,
+    state: String,
+}
+
+pub async fn begin() -> Result<Pending> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+
+    let verifier = random_string(48)?;
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let state = random_string(16)?;
+
+    let url = reqwest::Url::parse_with_params(
+        AUTHORIZE_URL,
+        &[
+            ("client_id", CLIENT_ID),
+            ("redirect_uri", redirect_uri.as_str()),
+            ("response_type", "code"),
+            ("scope", SCOPE),
+            ("state", state.as_str()),
+            ("code_challenge", challenge.as_str()),
+            ("code_challenge_method", "S256"),
+        ],
+    )?
+    .to_string();
+
+    Ok(Pending {
+        url,
+        listener,
+        redirect_uri,
+        verifier,
+        state,
+    })
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("");
+                match u8::from_str_radix(hex, 16) {
+                    Ok(b) => {
+                        out.push(b);
+                        i += 3;
+                    }
+                    Err(_) => {
+                        out.push(b'%');
+                        i += 1;
+                    }
+                }
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
     }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
-impl From<reqwest::Error> for ElyError {
-    fn from(e: reqwest::Error) -> Self {
-        ElyError::Other(e.into())
+/// `None` for requests that are not the OAuth callback (favicon etc.).
+fn parse_callback(target: &str, expected_state: &str) -> Option<Result<String>> {
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    if path != "/callback" {
+        return None;
     }
-}
 
-/// A random-looking id for this installation, required by the Yggdrasil-style API.
-pub async fn client_token(paths: &Paths) -> Result<String> {
-    let file = paths.root.join("client_token");
-    if let Ok(existing) = tokio::fs::read_to_string(&file).await {
-        let token = existing.trim().to_string();
-        if !token.is_empty() {
-            return Ok(token);
+    let mut code = None;
+    let mut state = None;
+    let mut error = None;
+    let mut error_description = None;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let value = percent_decode(value);
+        match key {
+            "code" => code = Some(value),
+            "state" => state = Some(value),
+            "error" => error = Some(value),
+            "error_description" => error_description = Some(value),
+            _ => {}
         }
     }
 
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let seed = format!("xt-launcher-{nanos}-{}", std::process::id());
-    let token = format!("{:x}", md5::compute(seed));
-
-    tokio::fs::create_dir_all(&paths.root).await?;
-    tokio::fs::write(&file, &token).await?;
-    Ok(token)
+    if let Some(e) = error {
+        let detail = error_description.unwrap_or(e);
+        return Some(Err(anyhow!("Ely.by refused the sign-in: {detail}")));
+    }
+    if state.as_deref() != Some(expected_state) {
+        return Some(Err(anyhow!("The sign-in response didn't match this request")));
+    }
+    Some(code.ok_or_else(|| anyhow!("Ely.by returned no authorization code")))
 }
 
-async fn post(path: &str, body: Value) -> Result<(u16, Value)> {
-    let resp = http::client()
-        .post(format!("{BASE}{path}"))
-        .json(&body)
-        .send()
-        .await?;
-    let status = resp.status().as_u16();
-    let text = resp.text().await?;
-    Ok((status, serde_json::from_str(&text).unwrap_or(Value::Null)))
+async fn respond(stream: &mut TcpStream, ok: bool) {
+    let message = if ok {
+        "Ely.by is connected. You can close this tab and go back to XT Launcher."
+    } else {
+        "Sign-in failed. Go back to XT Launcher and try again."
+    };
+    let body = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>XT Launcher</title></head>\
+         <body style=\"margin:0;display:grid;place-items:center;height:100vh;background:#100f0f;\
+         color:#ece0dd;font-family:system-ui,sans-serif\"><div style=\"text-align:center\">\
+         <h1 style=\"color:#c23a24;margin:0 0 8px\">XT Launcher</h1><p>{message}</p></div></body></html>"
+    );
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.shutdown().await;
 }
 
-fn message(body: &Value) -> String {
-    body.get("errorMessage")
-        .or_else(|| body.get("error"))
-        .and_then(|m| m.as_str())
-        .unwrap_or("Ely.by refused the request")
-        .to_string()
-}
+/// Wait for the browser to come back, then trade the code for tokens and read the profile.
+pub async fn complete(pending: Pending, cancel: &AtomicBool) -> Result<ElySession> {
+    let deadline = Instant::now() + LOGIN_TIMEOUT;
 
-fn read_session(body: &Value) -> Result<ElySession> {
-    let access_token = body
-        .get("accessToken")
+    let code = loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(anyhow!("Sign-in was cancelled"));
+        }
+        if Instant::now() > deadline {
+            return Err(anyhow!("Sign-in timed out. Try again."));
+        }
+
+        let accepted =
+            tokio::time::timeout(Duration::from_millis(500), pending.listener.accept()).await;
+        let mut stream = match accepted {
+            Ok(Ok((stream, _))) => stream,
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => continue,
+        };
+
+        let mut buf = vec![0u8; 8192];
+        let read = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf)).await;
+        let n = match read {
+            Ok(Ok(n)) => n,
+            _ => 0,
+        };
+        let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+        let target = request
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or("")
+            .to_string();
+
+        match parse_callback(&target, &pending.state) {
+            Some(result) => {
+                respond(&mut stream, result.is_ok()).await;
+                break result?;
+            }
+            None => {
+                let _ = stream.shutdown().await;
+            }
+        }
+    };
+
+    let (status, body) = post_form(
+        TOKEN_URL,
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", CLIENT_ID),
+            ("redirect_uri", pending.redirect_uri.as_str()),
+            ("code", code.as_str()),
+            ("code_verifier", pending.verifier.as_str()),
+        ],
+    )
+    .await?;
+    if status != 200 {
+        return Err(anyhow!("Ely.by token exchange failed: {}", error_text(&body)));
+    }
+
+    let tokens: Value = serde_json::from_str(&body)?;
+    let access_token = tokens
+        .get("access_token")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("Ely.by returned no access token"))?
         .to_string();
-    let profile = body
-        .get("selectedProfile")
-        .ok_or_else(|| anyhow!("This Ely.by account has no Minecraft profile"))?;
-    let uuid = profile
-        .get("id")
+    let refresh_token = tokens
+        .get("refresh_token")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Ely.by returned no profile id"))?
+        .ok_or_else(|| anyhow!("Ely.by did not issue a refresh token"))?
         .to_string();
-    let name = profile
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Ely.by returned no profile name"))?
-        .to_string();
+
+    let (uuid, name) = profile(&access_token).await?;
     Ok(ElySession {
         access_token,
+        refresh_token,
         uuid,
         name,
     })
 }
 
-pub async fn authenticate(
-    username: &str,
-    password: &str,
-    totp: Option<&str>,
-    client_token: &str,
-) -> Result<ElySession, ElyError> {
-    let password = match totp.map(str::trim).filter(|t| !t.is_empty()) {
-        Some(code) => format!("{password}:{code}"),
-        None => password.to_string(),
-    };
-
-    let (status, body) = post(
-        "/auth/authenticate",
-        json!({
-            "username": username,
-            "password": password,
-            "clientToken": client_token,
-            "requestUser": false
-        }),
-    )
-    .await?;
-
-    if status == 200 {
-        return Ok(read_session(&body)?);
-    }
-    let text = message(&body);
-    if text.to_lowercase().contains("two factor") {
-        return Err(ElyError::TwoFactor);
-    }
-    Err(ElyError::Other(anyhow!("{text}")))
+async fn post_form(url: &str, params: &[(&str, &str)]) -> Result<(u16, String)> {
+    let resp = http::client().post(url).form(params).send().await?;
+    let status = resp.status().as_u16();
+    Ok((status, resp.text().await?))
 }
 
-/// Exchange a stored access token for a fresh one (and the profile).
-pub async fn refresh(access_token: &str, client_token: &str) -> Result<ElySession> {
-    let (status, body) = post(
-        "/auth/refresh",
-        json!({
-            "accessToken": access_token,
-            "clientToken": client_token,
-            "requestUser": false
-        }),
+fn error_text(body: &str) -> String {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("error_description")
+                .or_else(|| v.get("error"))
+                .and_then(|e| e.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "unknown error".to_string())
+}
+
+/// The Minecraft profile (uuid without dashes, username) behind an access token.
+async fn profile(access_token: &str) -> Result<(String, String)> {
+    let resp = http::client()
+        .get(INFO_URL)
+        .bearer_auth(access_token)
+        .send()
+        .await?
+        .error_for_status()?;
+    let info: Value = resp.json().await?;
+    let uuid = info
+        .get("uuid")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("Ely.by returned no profile id"))?
+        .replace('-', "");
+    let name = info
+        .get("username")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("Ely.by returned no username"))?
+        .to_string();
+    Ok((uuid, name))
+}
+
+/// Trade a stored refresh token for a fresh access token (used at every launch).
+pub async fn refresh(refresh_token: &str) -> Result<ElySession> {
+    let (status, body) = post_form(
+        TOKEN_URL,
+        &[
+            ("grant_type", "refresh_token"),
+            ("client_id", CLIENT_ID),
+            ("refresh_token", refresh_token),
+            ("scope", SCOPE),
+        ],
     )
     .await?;
     if status != 200 {
         return Err(anyhow!(
             "Your Ely.by session expired. Sign in again ({}).",
-            message(&body)
+            error_text(&body)
         ));
     }
-    read_session(&body)
+
+    let tokens: Value = serde_json::from_str(&body)?;
+    let access_token = tokens
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("Ely.by returned no access token"))?
+        .to_string();
+    let refresh_token = tokens
+        .get("refresh_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or(refresh_token)
+        .to_string();
+
+    let (uuid, name) = profile(&access_token).await?;
+    Ok(ElySession {
+        access_token,
+        refresh_token,
+        uuid,
+        name,
+    })
 }

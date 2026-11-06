@@ -6,6 +6,8 @@ import article from '@material-symbols/svg-400/rounded/article.svg?raw';
 import check from '@material-symbols/svg-400/rounded/check.svg?raw';
 import close from '@material-symbols/svg-400/rounded/close.svg?raw';
 import cloudDownload from '@material-symbols/svg-400/rounded/cloud_download.svg?raw';
+import contentCopy from '@material-symbols/svg-400/rounded/content_copy.svg?raw';
+import edit from '@material-symbols/svg-400/rounded/edit.svg?raw';
 import deleteIcon from '@material-symbols/svg-400/rounded/delete.svg?raw';
 import filterNone from '@material-symbols/svg-400/rounded/filter_none.svg?raw';
 import folderOpen from '@material-symbols/svg-400/rounded/folder_open.svg?raw';
@@ -33,6 +35,8 @@ export const icons = {
   close,
   download: cloudDownload,
   trash: deleteIcon,
+  copy: contentCopy,
+  edit,
   restore: filterNone,
   folder: folderOpen,
   info,

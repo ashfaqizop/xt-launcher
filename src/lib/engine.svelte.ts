@@ -154,7 +154,8 @@ export async function play() {
         mc: profile.mc,
         account: { name: account.name, kind: account.type, id: account.id },
         msClientId: settings.msClientId || null,
-        ramMb: settings.ramAuto ? null : settings.ramMb,
+        ramMb: profile.ramMb ?? (settings.ramAuto ? null : settings.ramMb),
+        jvmArgs: profile.jvmArgs || null,
         width: settings.winW,
         height: settings.winH,
         fullscreen: settings.fullscreen,
@@ -185,5 +186,20 @@ export async function openFolder(kind: 'root' | 'game' | 'mods') {
     await invoke('open_dir', { kind, profileId: currentProfile().id });
   } catch (err) {
     showToast(String(err));
+  }
+}
+
+/** Load the Minecraft version list for the profile editor. */
+export async function loadVersionList(snapshots: boolean) {
+  if (!inTauri) return;
+  try {
+    const list = await invoke<{ latestRelease: string; versions: { id: string; kind: string }[] }>(
+      'list_versions',
+      { snapshots, old: false },
+    );
+    versions.latestRelease = list.latestRelease;
+    versions.list = list.versions;
+  } catch {
+    /* offline: the editor keeps what it has */
   }
 }
