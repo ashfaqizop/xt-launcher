@@ -4,7 +4,7 @@ A clean, fast Minecraft Java launcher. Tauri 2 + Rust backend, Svelte + [`@m3e/w
 
 ## Status
 
-Phase 1: scaffold, CI, signed OTA pipeline. See the roadmap in the project discussion.
+Phases 1-3 done: scaffold, CI, signed OTA pipeline, splash with intro, M3E app shell (home card, settings, accounts, profiles).
 
 ## Building
 

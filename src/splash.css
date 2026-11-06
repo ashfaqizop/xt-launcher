@@ -21,6 +21,27 @@ m3e-theme {
   min-width: 0;
 }
 
+/* Intro: the brand block starts centred and blurred (see playIntro in splash.ts),
+   then zooms out to its place at the top-left. Everything else waits for .ready. */
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transform-origin: 0 0;
+  opacity: 0;
+  will-change: transform, filter, opacity;
+}
+.ready .brand {
+  opacity: 1;
+}
+.rest {
+  opacity: 0;
+  transition: opacity 320ms ease-out;
+}
+.ready .rest {
+  opacity: 1;
+}
+
 .splash-logo {
   height: 38px;
   width: auto;

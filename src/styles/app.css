@@ -1,0 +1,31 @@
+/* Main-window styling shared by all views. Colours come from the M3E theme tokens. */
+
+.glass {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container, #1e1b1b) 74%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  backdrop-filter: blur(28px) saturate(150%);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant, #504442) 55%, transparent);
+  border-radius: 28px;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 0.35);
+  color: var(--md-sys-color-on-surface, #ece0dd);
+}
+
+.muted {
+  color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+}
+
+/* Text inputs inside m3e-form-field inherit the app font */
+m3e-form-field input {
+  font: inherit;
+  color: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface, #fff) 22%, transparent);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}

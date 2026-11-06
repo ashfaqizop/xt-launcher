@@ -37,7 +37,9 @@
         "minHeight": 540,
         "center": true,
         "visible": false,
-        "backgroundColor": "#100f0f"
+        "backgroundColor": "#100f0f",
+        "decorations": false,
+        "shadow": true
       }
     ],
     "security": {
@@ -46,7 +48,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",

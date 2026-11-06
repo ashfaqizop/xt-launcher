@@ -17,13 +17,15 @@
     <m3e-theme color="#c23a24" scheme="dark">
       <main class="splash" data-tauri-drag-region>
         <section class="splash-text" data-tauri-drag-region>
-          <img class="splash-logo" src="/src/assets/flame.png" alt="" draggable="false" />
-          <h1 data-tauri-drag-region>XT Launcher</h1>
-          <p id="status" class="status" role="status" aria-live="polite" data-tauri-drag-region>Starting XT</p>
-          <p id="detail" class="detail" data-tauri-drag-region></p>
+          <div id="brand" class="brand" data-tauri-drag-region>
+            <img class="splash-logo" src="/src/assets/flame.png" alt="" draggable="false" />
+            <h1 data-tauri-drag-region>XT Launcher</h1>
+          </div>
+          <p id="status" class="status rest" role="status" aria-live="polite" data-tauri-drag-region>Starting XT</p>
+          <p id="detail" class="detail rest" data-tauri-drag-region></p>
         </section>
 
-        <div class="indicator" aria-hidden="true">
+        <div class="indicator rest" aria-hidden="true">
           <!-- Only one is visible at a time; see render() in splash.ts -->
           <m3e-circular-progress-indicator id="ind-wavy" variant="wavy" indeterminate></m3e-circular-progress-indicator>
           <m3e-circular-progress-indicator id="ind-progress" variant="wavy" value="0" max="100" hidden></m3e-circular-progress-indicator>
