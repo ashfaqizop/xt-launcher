@@ -138,11 +138,6 @@ export async function play() {
     showToast('Launching works in the desktop app');
     return;
   }
-  if (account.type !== 'offline') {
-    showToast('Only offline accounts can launch for now');
-    return;
-  }
-
   engine.crash = null;
   engine.error = '';
   engine.logs = [];
@@ -157,7 +152,8 @@ export async function play() {
         profileId: profile.id,
         loader: profile.loader,
         mc: profile.mc,
-        account: { name: account.name },
+        account: { name: account.name, kind: account.type, id: account.id },
+        msClientId: settings.msClientId || null,
         ramMb: settings.ramAuto ? null : settings.ramMb,
         width: settings.winW,
         height: settings.winH,

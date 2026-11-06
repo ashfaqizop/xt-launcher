@@ -2,7 +2,8 @@
 //! the UI talks to.
 
 use super::crash::{self, CrashInfo};
-use super::launch::{self, Account, Options};
+use super::auth;
+use super::launch::{self, Options};
 use super::paths::Paths;
 use super::{install, java, loaders};
 use anyhow::{Context, Result};
@@ -67,6 +68,11 @@ fn emit_state(
 #[serde(rename_all = "camelCase")]
 pub struct AccountInfo {
     pub name: String,
+    /// microsoft | elyby | offline
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub id: Option<String>,
     #[serde(default)]
     pub uuid: Option<String>,
     #[serde(default)]
@@ -94,6 +100,9 @@ pub struct LaunchRequest {
     /// default | high | low
     #[serde(default)]
     pub gpu: Option<String>,
+    /// Azure client id for Microsoft accounts (overrides the built-in one)
+    #[serde(default)]
+    pub ms_client_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -206,32 +215,22 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
 
     let natives = launch::extract_natives(&paths, &version).await?;
 
-    let account = Account {
-        uuid: req
-            .account
-            .uuid
-            .clone()
-            .filter(|u| !u.is_empty())
-            .unwrap_or_else(|| launch::offline_uuid(&req.account.name)),
-        access_token: req
-            .account
-            .access_token
-            .clone()
-            .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| "0".to_string()),
-        user_type: req
-            .account
-            .user_type
-            .clone()
-            .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| "legacy".to_string()),
-        name: req.account.name.clone(),
-    };
+    emit_state(app, "installing", Some("Signing in".to_string()), None, None);
+    let resolved = auth::resolve_for_launch(
+        &paths,
+        req.account.kind.as_deref().unwrap_or("offline"),
+        req.account.id.as_deref().unwrap_or(""),
+        &req.account.name,
+        req.ms_client_id.clone(),
+    )
+    .await?;
+    let account = resolved.account;
     let options = Options {
         ram_mb: req.ram_mb.unwrap_or(4096).clamp(512, 65536),
         width: req.width.max(320),
         height: req.height.max(240),
         fullscreen: req.fullscreen,
+        extra_jvm: resolved.extra_jvm,
     };
     let args = launch::build_args(&paths, &version, &root_id, &natives, &game_dir, &account, &options)?;
 

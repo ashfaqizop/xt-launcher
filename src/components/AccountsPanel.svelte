@@ -1,24 +1,72 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import Icon from '../lib/Icon.svelte';
   import Panel from './Panel.svelte';
   import { ACCOUNT_LABEL, addOfflineAccount, data, removeAccount } from '../lib/data.svelte';
-  import { showToast } from '../lib/toast.svelte';
+  import { cancelMicrosoft, elyLogin, forgetSecrets, initAuth, microsoftLogin, msFlow } from '../lib/auth.svelte';
+  import { settings } from '../lib/settings.svelte';
+  import { openUrl } from '@tauri-apps/plugin-opener';
+  import { inTauri } from '../lib/engine.svelte';
 
-  let adding = $state(false);
+  type Mode = 'none' | 'microsoft' | 'elyby' | 'offline';
+  let mode = $state<Mode>('none');
+
+  // offline
   let name = $state('');
-  let error = $state('');
+  let offlineError = $state('');
 
-  function submit(e: Event) {
+  // ely.by
+  let elyUser = $state('');
+  let elyPass = $state('');
+  let elyTotp = $state('');
+  let elyNeedsCode = $state(false);
+  let elyBusy = $state(false);
+  let elyError = $state('');
+
+  onMount(() => void initAuth());
+
+  const toggle = (m: Mode) => (mode = mode === m ? 'none' : m);
+  const needsClientId = $derived(!msFlow.hasBuiltinClient && !settings.msClientId.trim());
+
+  function submitOffline(e: Event) {
     e.preventDefault();
     const err = addOfflineAccount(name);
     if (err) {
-      error = err;
+      offlineError = err;
       return;
     }
     name = '';
-    error = '';
-    adding = false;
+    offlineError = '';
+    mode = 'none';
   }
+
+  async function submitEly(e: Event) {
+    e.preventDefault();
+    elyBusy = true;
+    elyError = '';
+    const r = await elyLogin(elyUser, elyPass, elyNeedsCode ? elyTotp : undefined);
+    elyBusy = false;
+    if (r.status === 'done') {
+      elyUser = elyPass = elyTotp = '';
+      elyNeedsCode = false;
+      mode = 'none';
+    } else if (r.status === 'twoFactor') {
+      elyNeedsCode = true;
+    } else {
+      elyError = r.message;
+    }
+  }
+
+  async function signInMicrosoft() {
+    if (await microsoftLogin()) mode = 'none';
+  }
+
+  async function remove(id: string) {
+    await forgetSecrets(id);
+    removeAccount(id);
+  }
+
+  const open = (url: string) => (inTauri ? openUrl(url) : window.open(url, '_blank'));
 </script>
 
 <Panel title="Accounts">
@@ -34,7 +82,7 @@
             </span>
             {#if a.id === data.accountId}<span class="check"><Icon name="check" size={20} /></span>{/if}
           </button>
-          <m3e-icon-button aria-label="Remove {a.name}" onclick={() => removeAccount(a.id)}>
+          <m3e-icon-button aria-label="Remove {a.name}" onclick={() => remove(a.id)}>
             <Icon name="trash" size={22} />
           </m3e-icon-button>
         </li>
@@ -46,27 +94,96 @@
 
   <h3>Add an account</h3>
   <div class="options">
-    <button class="opt" disabled onclick={() => showToast('Microsoft sign-in is coming soon')}>
-      <Icon name="person" /> <span>Microsoft</span><em>Soon</em>
+    <button class="opt" class:on={mode === 'microsoft'} onclick={() => toggle('microsoft')}>
+      <Icon name="person" /> <span>Microsoft</span>
     </button>
-    <button class="opt" disabled onclick={() => showToast('Ely.by sign-in is coming soon')}>
-      <Icon name="person" /> <span>Ely.by</span><em>Soon</em>
+    <button class="opt" class:on={mode === 'elyby'} onclick={() => toggle('elyby')}>
+      <Icon name="person" /> <span>Ely.by</span>
     </button>
-    <button class="opt" class:on={adding} onclick={() => (adding = !adding)}>
+    <button class="opt" class:on={mode === 'offline'} onclick={() => toggle('offline')}>
       <Icon name="personAdd" /> <span>Offline</span>
     </button>
   </div>
 
-  {#if adding}
-    <form class="form" onsubmit={submit}>
+  {#if mode === 'microsoft'}
+    <div class="box">
+      {#if msFlow.waiting}
+        <p>Enter this code on the Microsoft page that just opened:</p>
+        {#if msFlow.code}
+          <div class="code" aria-live="polite">{msFlow.code}</div>
+          <p class="hint muted">Page didn't open? Go to {msFlow.url}</p>
+        {:else}
+          <p class="muted">Requesting a sign-in code…</p>
+        {/if}
+        <div class="actions">
+          {#if msFlow.url}<m3e-button variant="tonal" onclick={() => open(msFlow.url)}>Open page</m3e-button>{/if}
+          <m3e-button variant="text" onclick={cancelMicrosoft}>Cancel</m3e-button>
+        </div>
+      {:else}
+        {#if needsClientId}
+          <p>
+            Microsoft sign-in needs an Azure application (client) id. Register a free app in Microsoft Entra
+            (account type: personal Microsoft accounts, platform: mobile and desktop, public client flows on) and
+            paste its Application ID.
+          </p>
+          <m3e-form-field variant="outlined" class="field">
+            <label slot="label" for="ms-client">Application (client) ID</label>
+            <input id="ms-client" bind:value={settings.msClientId} spellcheck="false" autocomplete="off" />
+          </m3e-form-field>
+          <p class="hint muted">
+            Mojang must also approve the id for Minecraft services. Until then sign-in can fail with a
+            “not allowed” message.
+            <button class="link" onclick={() => open('https://aka.ms/mce-reviewappid')}>Request approval</button>
+          </p>
+        {:else}
+          <p class="muted">Sign in with the Microsoft account that owns Minecraft: Java Edition.</p>
+        {/if}
+        <div class="actions">
+          <m3e-button variant="filled" disabled={needsClientId} onclick={signInMicrosoft}>Sign in with Microsoft</m3e-button>
+        </div>
+      {/if}
+      {#if msFlow.error}<p class="error" role="alert">{msFlow.error}</p>{/if}
+    </div>
+  {/if}
+
+  {#if mode === 'elyby'}
+    <form class="box" onsubmit={submitEly}>
       <m3e-form-field variant="outlined" class="field">
-        <label slot="label" for="offline-name">Username</label>
-        <input id="offline-name" bind:value={name} maxlength="16" autocomplete="off" spellcheck="false" />
+        <label slot="label" for="ely-user">Username or email</label>
+        <input id="ely-user" bind:value={elyUser} autocomplete="username" spellcheck="false" />
       </m3e-form-field>
-      <m3e-button type="submit" variant="filled">Add</m3e-button>
+      <m3e-form-field variant="outlined" class="field">
+        <label slot="label" for="ely-pass">Password</label>
+        <input id="ely-pass" type="password" bind:value={elyPass} autocomplete="current-password" />
+      </m3e-form-field>
+      {#if elyNeedsCode}
+        <m3e-form-field variant="outlined" class="field">
+          <label slot="label" for="ely-totp">Two-factor code</label>
+          <input id="ely-totp" bind:value={elyTotp} inputmode="numeric" autocomplete="one-time-code" maxlength="8" />
+        </m3e-form-field>
+      {/if}
+      {#if elyError}<p class="error" role="alert">{elyError}</p>{/if}
+      <div class="actions">
+        <m3e-button type="submit" variant="filled" disabled={elyBusy || !elyUser || !elyPass}>
+          {elyBusy ? 'Signing in…' : 'Sign in'}
+        </m3e-button>
+      </div>
+      <p class="hint muted">Your password is sent only to authserver.ely.by and is never stored.</p>
     </form>
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <p class="hint muted">Offline accounts work without signing in, but can't join online-mode servers.</p>
+  {/if}
+
+  {#if mode === 'offline'}
+    <form class="box" onsubmit={submitOffline}>
+      <div class="inline">
+        <m3e-form-field variant="outlined" class="field">
+          <label slot="label" for="offline-name">Username</label>
+          <input id="offline-name" bind:value={name} maxlength="16" autocomplete="off" spellcheck="false" />
+        </m3e-form-field>
+        <m3e-button type="submit" variant="filled">Add</m3e-button>
+      </div>
+      {#if offlineError}<p class="error" role="alert">{offlineError}</p>{/if}
+      <p class="hint muted">Offline accounts work without signing in, but can't join online-mode servers.</p>
+    </form>
   {/if}
 </Panel>
 
@@ -152,42 +269,62 @@
     font-weight: 600;
     background: color-mix(in srgb, var(--md-sys-color-surface-container-highest, #383434) 55%, transparent);
   }
-  .opt:hover:not(:disabled) {
+  .opt:hover {
     background: color-mix(in srgb, var(--md-sys-color-surface-container-highest, #383434) 90%, transparent);
   }
   .opt.on {
     background: var(--md-sys-color-secondary-container, #5d3f3a);
     color: var(--md-sys-color-on-secondary-container, #ffdad4);
   }
-  .opt:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
   .opt:focus-visible {
     outline: 2px solid var(--md-sys-color-primary, #c23a24);
   }
-  em {
-    font-style: normal;
-    font-size: 11px;
-    font-weight: 500;
-    opacity: 0.8;
+
+  .box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 16px;
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high, #2d2929) 60%, transparent);
   }
-  .form {
+  .box p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .inline {
     display: flex;
     gap: 10px;
     align-items: center;
-    margin-top: 14px;
   }
   .field {
     flex: 1;
+    width: 100%;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+  }
+  .code {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    padding: 6px 0;
+    user-select: text;
+    color: var(--md-sys-color-primary, #c23a24);
   }
   .error {
     color: var(--md-sys-color-error, #ffb4ab);
-    margin: 8px 4px 0;
-    font-size: 13px;
   }
   .hint {
-    margin: 10px 4px 0;
     font-size: 12.5px;
+  }
+  .link {
+    all: unset;
+    cursor: pointer;
+    text-decoration: underline;
+    color: var(--md-sys-color-primary, #c23a24);
   }
 </style>

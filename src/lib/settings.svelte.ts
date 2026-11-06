@@ -25,6 +25,8 @@ export interface Settings {
   gpu: 'default' | 'high' | 'low';
   showSnapshots: boolean;
   showOld: boolean;
+  /** Azure application (client) id for Microsoft sign-in */
+  msClientId: string;
 }
 
 export const DEFAULTS: Settings = {
@@ -48,6 +50,7 @@ export const DEFAULTS: Settings = {
   gpu: 'default',
   showSnapshots: false,
   showOld: false,
+  msClientId: '',
 };
 
 const KEY = 'xt.settings.v1';

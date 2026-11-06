@@ -9,6 +9,8 @@ export interface Account {
   id: string;
   name: string;
   type: AccountType;
+  /** Minecraft profile uuid (microsoft / elyby) */
+  uuid?: string;
 }
 
 export type Loader = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge';
@@ -100,6 +102,14 @@ export function addOfflineAccount(name: string): string | null {
   data.accounts.push(acc);
   data.accountId = acc.id;
   return null;
+}
+
+/** Add (or update) a signed-in account and make it the current one. */
+export function addRemoteAccount(acc: Account) {
+  const i = data.accounts.findIndex((a) => a.id === acc.id);
+  if (i >= 0) data.accounts[i] = acc;
+  else data.accounts.push(acc);
+  data.accountId = acc.id;
 }
 
 export function removeAccount(id: string) {

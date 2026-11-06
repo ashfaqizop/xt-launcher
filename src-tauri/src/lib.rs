@@ -22,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .manage(engine::session::Session::default())
+        .manage(engine::auth::AuthState::default())
         .invoke_handler(tauri::generate_handler![
             finish_splash,
             engine::session::launch_game,
@@ -30,6 +31,11 @@ pub fn run() {
             engine::session::engine_info,
             engine::session::list_versions,
             engine::session::open_dir,
+            engine::auth::ms_login,
+            engine::auth::ms_cancel,
+            engine::auth::ms_has_builtin_client,
+            engine::auth::ely_login,
+            engine::auth::forget_account,
         ])
         .run(tauri::generate_context!())
         .expect("error while running XT Launcher");

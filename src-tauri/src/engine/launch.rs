@@ -18,6 +18,8 @@ pub struct Options {
     pub width: u32,
     pub height: u32,
     pub fullscreen: bool,
+    /// Extra JVM arguments (e.g. authlib-injector), placed before everything else
+    pub extra_jvm: Vec<String>,
 }
 
 /// Stable, widely used JVM flags that help Minecraft's allocation pattern.
@@ -181,7 +183,8 @@ pub fn build_args(
         .ok_or_else(|| anyhow!("version {} has no main class", v.id))?;
 
     // JVM arguments
-    let mut jvm: Vec<String> = vec![format!("-Xmx{}M", opts.ram_mb)];
+    let mut jvm: Vec<String> = opts.extra_jvm.clone();
+    jvm.push(format!("-Xmx{}M", opts.ram_mb));
     jvm.extend(performance_flags());
     if let Some(arguments) = &v.arguments {
         jvm.extend(flatten(&arguments.jvm, &feats, &vars));
