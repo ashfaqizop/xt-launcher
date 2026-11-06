@@ -25,6 +25,8 @@ export interface Profile {
   ramMb?: number | null;
   /** Extra JVM arguments, space separated */
   jvmArgs?: string;
+  /** Use the ZGC garbage collector (custom profiles; the XT profiles always do) */
+  zgc?: boolean;
 }
 
 export const ACCOUNT_LABEL: Record<AccountType, string> = {

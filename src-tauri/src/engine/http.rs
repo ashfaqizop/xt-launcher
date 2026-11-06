@@ -11,7 +11,7 @@ pub fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .user_agent(concat!("XT-Launcher/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("ashfaqizop/xt-launcher/", env!("CARGO_PKG_VERSION"), " (https://github.com/ashfaqizop/xt-launcher)"))
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(600))
             .build()

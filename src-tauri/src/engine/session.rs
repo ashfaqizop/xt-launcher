@@ -5,7 +5,7 @@ use super::crash::{self, CrashInfo};
 use super::auth;
 use super::launch::{self, Options};
 use super::paths::Paths;
-use super::{install, java, loaders};
+use super::{install, java, loaders, mods};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -100,6 +100,12 @@ pub struct LaunchRequest {
     /// default | high | low
     #[serde(default)]
     pub gpu: Option<String>,
+    /// "xt" or "xt-plus": keep the curated mod set for this profile up to date
+    #[serde(default)]
+    pub xt_tier: Option<String>,
+    /// "zgc": use the low-latency ZGC garbage collector (falls back to G1 on old Java)
+    #[serde(default)]
+    pub jvm_preset: Option<String>,
     /// Extra JVM arguments for this profile, space separated
     #[serde(default)]
     pub jvm_args: Option<String>,
@@ -170,7 +176,48 @@ fn apply_gpu_preference(java: &Path, preference: Option<&str>) {
 #[cfg(not(windows))]
 fn apply_gpu_preference(_java: &Path, _preference: Option<&str>) {}
 
+/// A launcher message in the game log ("[XT] ..."), shown alongside the game's own output.
+fn push_log(app: &AppHandle, text: &str) {
+    let entry = LogLine {
+        stream: "xt".to_string(),
+        line: format!("[XT] {text}"),
+    };
+    {
+        let session = app.state::<Session>();
+        let mut logs = session.logs.lock().unwrap();
+        if logs.len() >= MAX_LOG_LINES {
+            logs.pop_front();
+        }
+        logs.push_back(entry.clone());
+    }
+    let _ = app.emit("game-log", entry);
+}
+
+/// Keep the curated XT mods current for this profile; problems never block the launch.
+async fn sync_xt_mods(app: &AppHandle, paths: &Paths, req: &LaunchRequest, tier: &str, mc: &str) {
+    if req.loader != "fabric" {
+        push_log(app, "XT mods need the Fabric loader, skipping mod updates");
+        return;
+    }
+    emit_state(app, "installing", Some("Updating mods".to_string()), None, None);
+    match mods::sync(app, paths, &req.profile_id, tier, mc, "fabric").await {
+        Ok(report) if report.offline => {
+            push_log(app, "Couldn't reach Modrinth, using the mods already installed");
+        }
+        Ok(report) => {
+            if !report.up_to_date {
+                push_log(app, &format!("{} mods ready for Minecraft {mc}", report.count));
+            }
+            for line in &report.skipped {
+                push_log(app, &format!("Skipped: {line}"));
+            }
+        }
+        Err(e) => push_log(app, &format!("Mod update failed, continuing: {e:#}")),
+    }
+}
+
 async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
+    app.state::<Session>().logs.lock().unwrap().clear();
     let paths = Paths::new(app)?;
     let game_dir = paths.instance(&req.profile_id);
     for dir in [
@@ -196,6 +243,10 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         "vanilla" => mc_id.clone(),
         kind => loaders::install(app, &paths, kind, &mc_id).await?,
     };
+
+    if let Some(tier) = req.xt_tier.as_deref() {
+        sync_xt_mods(app, &paths, &req, tier, &mc_id).await;
+    }
 
     let (version, root_id) = install::resolve(&paths, &version_id).await?;
     install::prepare(app, &paths, &version, &root_id).await?;
@@ -242,6 +293,12 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         height: req.height.max(240),
         fullscreen: req.fullscreen,
         extra_jvm,
+        zgc: req.jvm_preset.as_deref() == Some("zgc"),
+        java_major: version
+            .java_version
+            .as_ref()
+            .map(|j| j.major_version)
+            .unwrap_or(8),
     };
     let args = launch::build_args(&paths, &version, &root_id, &natives, &game_dir, &account, &options)?;
 
@@ -264,7 +321,6 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     {
         let session = app.state::<Session>();
         *session.pid.lock().unwrap() = child.id();
-        session.logs.lock().unwrap().clear();
         session.killed.store(false, Ordering::SeqCst);
     }
     emit_state(app, "running", None, None, None);

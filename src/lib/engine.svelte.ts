@@ -15,7 +15,8 @@ export interface CrashInfo {
   report: string | null;
 }
 export interface LogLine {
-  stream: 'out' | 'err';
+  /** out / err: the game; xt: messages from the launcher itself */
+  stream: 'out' | 'err' | 'xt';
   line: string;
 }
 
@@ -156,6 +157,8 @@ export async function play() {
         msClientId: settings.msClientId || null,
         ramMb: profile.ramMb ?? (settings.ramAuto ? null : settings.ramMb),
         jvmArgs: profile.jvmArgs || null,
+        xtTier: profile.kind === 'custom' ? null : profile.kind,
+        jvmPreset: profile.kind !== 'custom' || profile.zgc ? 'zgc' : null,
         width: settings.winW,
         height: settings.winH,
         fullscreen: settings.fullscreen,

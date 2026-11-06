@@ -8,6 +8,7 @@ mod installer;
 mod java;
 mod launch;
 mod loaders;
+mod mods;
 mod mojang;
 mod paths;
 pub mod session;

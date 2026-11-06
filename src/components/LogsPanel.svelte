@@ -62,7 +62,7 @@
       <p class="empty muted">The game's output appears here while it runs.</p>
     {/if}
     {#each lines as l, i (i)}
-      <div class="line" class:err={l.stream === 'err'}>{l.line}</div>
+      <div class="line" class:err={l.stream === 'err'} class:xt={l.stream === 'xt'}>{l.line}</div>
     {/each}
   </div>
 </Panel>
@@ -109,6 +109,9 @@
   .line {
     white-space: pre-wrap;
     word-break: break-all;
+  }
+  .line.xt {
+    color: var(--md-sys-color-primary, #c23a24);
   }
   .line.err {
     color: var(--md-sys-color-error, #ffb4ab);

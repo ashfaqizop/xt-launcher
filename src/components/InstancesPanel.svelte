@@ -129,6 +129,11 @@
       </label>
 
       <label class="sw">
+        <span>Use ZGC (smoother frame times)</span>
+        <m3e-switch checked={!!draft.zgc} onchange={(e: Event) => draft && (draft.zgc = chk(e))}></m3e-switch>
+      </label>
+
+      <label class="sw">
         <span>Use its own memory</span>
         <m3e-switch checked={ramOverride} onchange={(e: Event) => (ramOverride = chk(e))}></m3e-switch>
       </label>

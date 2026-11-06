@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "tiers": {
+    "xt": {
+      "name": "XT Optimized",
+      "mods": [
+        "fabric-api",
+        "sodium",
+        "entityculling",
+        "ferrite-core",
+        "lithium",
+        "immediatelyfast",
+        "modernfix",
+        "dynamic-fps"
+      ]
+    },
+    "xt-plus": {
+      "name": "XT Optimized+",
+      "extends": "xt",
+      "mods": [
+        "modmenu",
+        "placeholder-api",
+        "xaeros-world-map",
+        "xaeros-minimap",
+        "appleskin",
+        "zoomify",
+        "shulkerboxtooltip",
+        "gamma-utils"
+      ]
+    }
+  }
+}

@@ -20,18 +20,29 @@ pub struct Options {
     pub fullscreen: bool,
     /// Extra JVM arguments (e.g. authlib-injector), placed before everything else
     pub extra_jvm: Vec<String>,
+    /// Use ZGC instead of G1
+    pub zgc: bool,
+    /// Major version of the Java runtime that will run the game
+    pub java_major: u32,
 }
 
-/// Stable, widely used JVM flags that help Minecraft's allocation pattern.
-fn performance_flags() -> Vec<String> {
-    [
-        "-XX:+UseG1GC",
-        "-XX:+ParallelRefProcEnabled",
-        "-XX:MaxGCPauseMillis=200",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+/// Garbage collector flags. ZGC (generational on Java 21+) keeps frame times steady;
+/// old Java versions without a usable ZGC, and everything else, use tuned G1.
+fn gc_flags(zgc: bool, java_major: u32) -> Vec<String> {
+    let mut flags: Vec<&str> = if zgc && java_major >= 17 {
+        vec!["-XX:+UseZGC", "-XX:+PerfDisableSharedMem"]
+    } else {
+        vec![
+            "-XX:+UseG1GC",
+            "-XX:+ParallelRefProcEnabled",
+            "-XX:MaxGCPauseMillis=200",
+        ]
+    };
+    // Generational ZGC is opt-in on Java 21-23 and the only mode from Java 24
+    if zgc && (21..24).contains(&java_major) {
+        flags.push("-XX:+ZGenerational");
+    }
+    flags.into_iter().map(String::from).collect()
 }
 
 /// The offline-mode UUID the game itself derives: MD5("OfflinePlayer:<name>") as a v3 UUID.
@@ -185,7 +196,7 @@ pub fn build_args(
     // JVM arguments
     let mut jvm: Vec<String> = opts.extra_jvm.clone();
     jvm.push(format!("-Xmx{}M", opts.ram_mb));
-    jvm.extend(performance_flags());
+    jvm.extend(gc_flags(opts.zgc, opts.java_major));
     if let Some(arguments) = &v.arguments {
         jvm.extend(flatten(&arguments.jvm, &feats, &vars));
     }

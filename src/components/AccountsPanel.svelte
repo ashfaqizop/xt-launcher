@@ -73,8 +73,9 @@
 
   <h3>Add an account</h3>
   <div class="options">
-    <button class="opt" class:on={mode === 'microsoft'} onclick={() => toggle('microsoft')}>
-      <Icon name="person" /> <span>Microsoft</span>
+    <!-- Microsoft sign-in is switched off for now (needs an approved Azure app) -->
+    <button class="opt" disabled aria-disabled="true">
+      <Icon name="person" /> <span>Microsoft</span><em>Soon</em>
     </button>
     <button class="opt" class:on={mode === 'elyby'} onclick={() => toggle('elyby')}>
       <Icon name="person" /> <span>Ely.by</span>
@@ -253,6 +254,19 @@
   }
   .opt:focus-visible {
     outline: 2px solid var(--md-sys-color-primary, #c23a24);
+  }
+  .opt:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .opt:disabled:hover {
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-highest, #383434) 55%, transparent);
+  }
+  .opt em {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.85;
   }
 
   .box {
