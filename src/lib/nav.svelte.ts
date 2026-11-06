@@ -1,4 +1,4 @@
-export type View = 'home' | 'settings' | 'accounts' | 'instances';
+export type View = 'home' | 'settings' | 'accounts' | 'instances' | 'logs';
 
 export const nav: { view: View; tab: 'minecraft' | 'launcher' | 'about' } = $state({
   view: 'home',

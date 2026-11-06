@@ -1,7 +1,10 @@
 // Accounts and profiles. The profile list is static sample data until the Rust
 // engine owns it; accounts and the current selection persist in localStorage.
 
+import { versions } from './versions.svelte';
+
 export type AccountType = 'microsoft' | 'elyby' | 'offline';
+
 export interface Account {
   id: string;
   name: string;
@@ -32,10 +35,10 @@ export const LOADER_LABEL: Record<Loader, string> = {
 };
 
 export const PROFILES: Profile[] = [
-  { id: 'xt', name: 'XT Optimized', kind: 'xt', loader: 'fabric', mc: '26.3' },
-  { id: 'xt-plus', name: 'XT Optimized+', kind: 'xt-plus', loader: 'fabric', mc: '26.3' },
-  { id: 'release', name: 'Release 26.3', kind: 'custom', loader: 'vanilla', mc: '26.3' },
-  { id: 'fabric', name: 'Fabric 26.3', kind: 'custom', loader: 'fabric', mc: '26.3' },
+  { id: 'xt', name: 'XT Optimized', kind: 'xt', loader: 'fabric', mc: 'latest' },
+  { id: 'xt-plus', name: 'XT Optimized+', kind: 'xt-plus', loader: 'fabric', mc: 'latest' },
+  { id: 'release', name: 'Vanilla Release', kind: 'custom', loader: 'vanilla', mc: 'latest' },
+  { id: 'fabric', name: 'Fabric', kind: 'custom', loader: 'fabric', mc: 'latest' },
 ];
 
 interface Persisted {
@@ -80,7 +83,8 @@ export const currentAccount = () => data.accounts.find((a) => a.id === data.acco
 export const currentProfile = () => PROFILES.find((p) => p.id === data.profileId) ?? PROFILES[0];
 
 export function profileSubtitle(p: Profile) {
-  return `${LOADER_LABEL[p.loader]} · ${p.mc}`;
+  const mc = p.mc === 'latest' ? versions.latestRelease || 'Latest release' : p.mc;
+  return `${LOADER_LABEL[p.loader]} · ${mc}`;
 }
 
 export const OFFLINE_NAME = /^[A-Za-z0-9_]{3,16}$/;

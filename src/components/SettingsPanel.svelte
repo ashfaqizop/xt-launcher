@@ -7,6 +7,7 @@
   import flame from '../assets/flame.png';
   import { GALLERY, refreshCustomFlag, setCustomWallpaper, wp } from '../lib/wallpaper.svelte';
   import { showToast } from '../lib/toast.svelte';
+  import { engine } from '../lib/engine.svelte';
   import { checkForUpdates, type UpdateResult } from '../lib/updater';
   import { getVersion } from '@tauri-apps/api/app';
   import { openUrl } from '@tauri-apps/plugin-opener';
@@ -77,7 +78,7 @@
         <div class="row">
           <span class="label">Game folder</span>
           <m3e-form-field variant="outlined" class="ctl">
-            <input value={settings.gameFolder} readonly aria-label="Game folder" />
+            <input value={engine.dataDir || settings.gameFolder} readonly aria-label="Game folder" />
           </m3e-form-field>
         </div>
         <div class="row">
@@ -213,7 +214,7 @@
           <span class="label">After starting Minecraft</span>
           <m3e-form-field variant="outlined" class="ctl">
             <m3e-select value={settings.afterLaunch} aria-label="After starting Minecraft" onchange={(e: Event) => (settings.afterLaunch = val(e) as typeof settings.afterLaunch)}>
-              <m3e-option value="tray">Hide to tray</m3e-option>
+              <m3e-option value="tray">Minimize launcher</m3e-option>
               <m3e-option value="close">Close launcher</m3e-option>
               <m3e-option value="keep">Keep open</m3e-option>
             </m3e-select>

@@ -3,6 +3,7 @@
   import { go } from '../lib/nav.svelte';
   import { showToast } from '../lib/toast.svelte';
   import { checkForUpdates } from '../lib/updater';
+  import { engine, openFolder, play, stop } from '../lib/engine.svelte';
   import {
     ACCOUNT_LABEL,
     PROFILES,
@@ -14,15 +15,6 @@
 
   const acc = $derived(currentAccount());
   const profile = $derived(currentProfile());
-
-  function play() {
-    if (!acc) {
-      showToast('Add an account to play');
-      go('accounts');
-      return;
-    }
-    showToast("Launching isn't wired up in this build yet");
-  }
 
   async function refresh() {
     showToast('Checking for updates…', 1500);
@@ -71,14 +63,25 @@
   </m3e-menu>
 
   <!-- Play -->
-  <m3e-button class="play" variant="filled" size="large" onclick={play}>
-    <span slot="icon" class="play-ic"><Icon name="play" size={28} /></span>
-    Play
-  </m3e-button>
+  {#if engine.phase === 'running'}
+    <m3e-button class="play" variant="tonal" size="large" onclick={stop}>Stop game</m3e-button>
+  {:else if engine.phase === 'installing'}
+    <m3e-button class="play" variant="tonal" size="large" disabled>
+      <span slot="icon">
+        <m3e-circular-progress-indicator variant="wavy" indeterminate={!engine.percent} value={engine.percent} max="100" class="mini"></m3e-circular-progress-indicator>
+      </span>
+      {engine.label}{engine.percent ? ` ${Math.floor(engine.percent)}%` : ''}
+    </m3e-button>
+  {:else}
+    <m3e-button class="play" variant="filled" size="large" onclick={play}>
+      <span slot="icon" class="play-ic"><Icon name="play" size={28} /></span>
+      Play
+    </m3e-button>
+  {/if}
 
   <!-- Quick actions -->
   <div class="actions">
-    <m3e-icon-button id="b-logs" variant="tonal" aria-label="Game logs" onclick={() => showToast('Game logs appear here once a session starts')}>
+    <m3e-icon-button id="b-logs" variant="tonal" aria-label="Game logs" onclick={() => go('logs')}>
       <Icon name="logs" />
     </m3e-icon-button>
     <m3e-tooltip for="b-logs">Game logs</m3e-tooltip>
@@ -88,8 +91,8 @@
       <Icon name="folder" />
     </m3e-icon-button>
     <m3e-menu id="folder-menu">
-      <m3e-menu-item onclick={() => showToast('Opens once the game folder exists')}>Open mods folder</m3e-menu-item>
-      <m3e-menu-item onclick={() => showToast('Opens once the game folder exists')}>Open game folder</m3e-menu-item>
+      <m3e-menu-item onclick={() => openFolder('mods')}>Open mods folder</m3e-menu-item>
+      <m3e-menu-item onclick={() => openFolder('game')}>Open game folder</m3e-menu-item>
     </m3e-menu>
 
     <m3e-icon-button id="b-refresh" variant="tonal" aria-label="Check for updates" onclick={refresh}>
@@ -183,6 +186,11 @@
     margin-top: 4px;
     width: 100%;
     --m3e-button-large-container-height: 64px;
+  }
+
+  .mini {
+    --m3e-circular-wavy-progress-indicator-diameter: 28px;
+    --m3e-circular-progress-indicator-thickness: 3px;
   }
 
   .actions {

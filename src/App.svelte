@@ -4,10 +4,14 @@
   import SettingsPanel from './components/SettingsPanel.svelte';
   import AccountsPanel from './components/AccountsPanel.svelte';
   import InstancesPanel from './components/InstancesPanel.svelte';
+  import LogsPanel from './components/LogsPanel.svelte';
+  import { initEngine } from './lib/engine.svelte';
   import { nav } from './lib/nav.svelte';
   import { settings } from './lib/settings.svelte';
   import { BRAND_SEED, applyWallpaper, wp } from './lib/wallpaper.svelte';
   import { toast } from './lib/toast.svelte';
+
+  void initEngine();
 
   // Resolve the chosen wallpaper (and its seed colour) whenever the setting changes.
   $effect(() => {
@@ -38,6 +42,8 @@
         <AccountsPanel />
       {:else if nav.view === 'instances'}
         <InstancesPanel />
+      {:else if nav.view === 'logs'}
+        <LogsPanel />
       {/if}
     </main>
 
