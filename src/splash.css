@@ -5,11 +5,11 @@ m3e-theme {
 
 .splash {
   height: 100vh;
-  padding: 0 28px 0 32px;
+  padding: 0 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
   color: var(--md-sys-color-on-surface, #ece0dd);
   background: var(--md-sys-color-surface, #100f0f);
 }
@@ -18,34 +18,84 @@ m3e-theme {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
   min-width: 0;
 }
 
 .splash-logo {
-  height: 40px;
+  height: 38px;
   width: auto;
   margin-bottom: 10px;
 }
 
 .splash h1 {
-  margin: 0;
+  margin: 0 0 6px;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  line-height: 1.1;
 }
 
-.splash p {
+.status,
+.detail {
   margin: 0;
-  font-size: 14px;
-  font-weight: 450;
-  color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-#spinner {
+.status {
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.4;
+  color: var(--md-sys-color-primary, #ffb4a6);
+}
+
+.detail {
+  font-size: 12.5px;
+  font-weight: 420;
+  line-height: 1.4;
+  min-height: 1.4em; /* reserve the row so the layout never jumps */
+  color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gentle cross-fade when a line of text changes */
+.swap {
+  animation: swap 180ms ease-out;
+}
+@keyframes swap {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.indicator {
   flex: none;
-  font-size: 56px; /* m3e-loading-indicator scales with font-size */
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+}
+
+.indicator > [hidden] {
+  display: none;
+}
+
+#ind-wavy,
+#ind-progress {
+  --m3e-circular-wavy-progress-indicator-diameter: 64px;
+  --m3e-circular-progress-indicator-thickness: 5px;
+}
+
+#ind-loading {
+  --m3e-loading-indicator-active-indicator-size: 52px;
+  --m3e-loading-indicator-container-size: 72px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swap {
+    animation: none;
+  }
 }
