@@ -1,7 +1,9 @@
 name: Release
 
-# Push a tag like v0.1.0 (matching src-tauri/tauri.conf.json "version") to publish
-# a signed NSIS installer and the latest.json the in-app updater reads.
+# Push a tag like v0.1.0 (matching src-tauri/tauri.conf.json "version") to build
+# a signed NSIS installer and the latest.json the in-app updater reads. Releases are
+# created as DRAFTS: nothing is public (and no one is offered the update) until the
+# draft is published on GitHub.
 on:
   push:
     tags: ['v*']
@@ -39,6 +41,6 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: XT Launcher ${{ github.ref_name }}
           releaseBody: See the assets below to download and install XT Launcher.
-          releaseDraft: false
+          releaseDraft: true   # drafts stay private until you press Publish on GitHub
           prerelease: false
           uploadUpdaterJson: true
