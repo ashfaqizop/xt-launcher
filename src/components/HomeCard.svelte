@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../lib/Icon.svelte';
+  import Head from '../lib/Head.svelte';
   import { go, goCreateProfile } from '../lib/nav.svelte';
   import { showToast } from '../lib/toast.svelte';
   import { checkForUpdates } from '../lib/updater';
@@ -29,7 +30,7 @@
   <!-- Account -->
   <button class="picker" aria-label="Choose account">
     <m3e-menu-trigger for="acc-menu"></m3e-menu-trigger>
-    <m3e-avatar class="avatar">{acc ? acc.name.slice(0, 1).toUpperCase() : '+'}</m3e-avatar>
+    {#if acc}<Head name={acc.name} size={40} />{:else}<span class="chip-icon"><Icon name="add" size={22} /></span>{/if}
     <span class="text">
       <span class="title">{acc ? acc.name : 'Add an account'}</span>
       <span class="sub muted">{acc ? ACCOUNT_LABEL[acc.type] : 'Microsoft, Ely.by or offline'}</span>
@@ -162,10 +163,6 @@
     font-size: 12.5px;
   }
 
-  .avatar {
-    --m3e-avatar-size: 40px;
-    flex: none;
-  }
   .chip-icon {
     width: 40px;
     height: 40px;
