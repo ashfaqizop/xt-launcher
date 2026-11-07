@@ -1,21 +1,17 @@
 <script lang="ts">
-  // A player's face (with hat layer) cut out of their skin. Skins come from Ely.by's
-  // skin system by username; if there is no skin, the first letter is shown instead.
+  // A player's face (with hat layer) cut out of their Ely.by skin; the first letter
+  // of the name is shown when there is no skin.
+  import { loadSkin } from './skin';
 
   let { name, size = 40 }: { name: string; size?: number } = $props();
 
   let skin = $state<string | null>(null);
 
   $effect(() => {
-    const n = name.trim();
-    skin = null;
-    if (!/^[A-Za-z0-9_.]{2,16}$/.test(n)) return;
-    const url = `https://skinsystem.ely.by/skins/${encodeURIComponent(n)}.png`;
-    const img = new Image();
+    const n = name;
     let alive = true;
-    img.onload = () => alive && (skin = url);
-    img.onerror = () => alive && (skin = null);
-    img.src = url;
+    skin = null;
+    void loadSkin(n).then((s) => alive && (skin = s?.url ?? null));
     return () => {
       alive = false;
     };

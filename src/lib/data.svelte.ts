@@ -216,6 +216,19 @@ export function addRemoteAccount(acc: Account) {
   data.accountId = acc.id;
 }
 
+/** Rename an offline account. Returns an error message, or null on success. */
+export function renameOfflineAccount(id: string, name: string): string | null {
+  const n = name.trim();
+  const acc = data.accounts.find((a) => a.id === id);
+  if (!acc || acc.type !== 'offline') return 'Only offline accounts can be renamed.';
+  if (!OFFLINE_NAME.test(n)) return 'Use 3-16 letters, numbers or underscores.';
+  if (data.accounts.some((a) => a.id !== id && a.type === 'offline' && a.name.toLowerCase() === n.toLowerCase())) {
+    return 'You already have this offline account.';
+  }
+  acc.name = n;
+  return null;
+}
+
 export function removeAccount(id: string) {
   const i = data.accounts.findIndex((a) => a.id === id);
   if (i < 0) return;
