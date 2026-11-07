@@ -6,7 +6,8 @@ import './styles/base.css';
 import './splash.css';
 
 import { invoke } from '@tauri-apps/api/core';
-import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
+import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater';
+import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
 
 // ---------------------------------------------------------------------------
@@ -128,9 +129,26 @@ const skipIntro = !!demo && !params?.has('intro');
 if (skipIntro) document.body.classList.add('ready');
 const intro: Promise<void> = skipIntro ? Promise.resolve() : playIntro();
 
+// ---------------------------------------------------------------------------
+// Status queue: every status is shown for at least a moment *after* the intro,
+// so "Connecting to GitHub", "Checking For Updates" and "Launching XT" are always
+// readable, even when the update check finished while the intro was playing.
+// ---------------------------------------------------------------------------
+
+const MIN_STATUS_MS = 650;
+let queue: Promise<void> = intro;
+
+/** Queue a status; resolves once it has been on screen for `minMs`. */
+function show(view: View, minMs = MIN_STATUS_MS): Promise<void> {
+  queue = queue.then(async () => {
+    render(view);
+    await sleep(minMs);
+  });
+  return queue;
+}
+
 async function launchMain() {
-  await intro; // never close the splash mid-animation
-  render({ status: 'Launching XT', indicator: 'loading' });
+  await show({ status: 'Launching XT', indicator: 'loading' }, 900);
   try {
     await invoke('finish_splash');
   } catch (err) {
@@ -143,42 +161,52 @@ async function launchMain() {
 // ---------------------------------------------------------------------------
 
 const CHECK_TIMEOUT_MS = 8000;
-/** If the check is still pending after this long, say what is probably happening. */
-const SLOW_CHECK_MS = 700;
+
+type CheckResult = { ok: true; update: Update | null } | { ok: false; error: unknown };
 
 async function run() {
-  render({ status: 'Connecting to GitHub', indicator: 'wavy' });
-  const slow = setTimeout(
-    () => render({ status: 'Checking For Updates', indicator: 'wavy' }),
-    SLOW_CHECK_MS,
+  // The check starts right away (in parallel with the intro); its statuses are queued.
+  const result: Promise<CheckResult> = check({ timeout: CHECK_TIMEOUT_MS }).then(
+    (update) => ({ ok: true as const, update }),
+    (error) => ({ ok: false as const, error }),
   );
+  void show({ status: 'Connecting to GitHub', indicator: 'wavy' });
+  void show({ status: 'Checking For Updates', indicator: 'wavy' });
 
-  let update;
-  try {
-    update = await check({ timeout: CHECK_TIMEOUT_MS });
-  } catch (err) {
+  const r = await result;
+
+  if (!r.ok) {
     // Offline, GitHub unreachable, or no release published yet: launch anyway.
-    console.warn('Update check failed:', err);
-    clearTimeout(slow);
-    render({
-      status: "Can't reach GitHub",
-      detail: 'Continuing without updates',
-      indicator: 'wavy',
-    });
-    await sleep(900);
+    console.warn('Update check failed:', r.error);
+    void show(
+      { status: "Can't reach GitHub", detail: 'Continuing without updates', indicator: 'wavy' },
+      1100,
+    );
     return launchMain();
   }
-  clearTimeout(slow);
 
-  if (!update) return launchMain();
+  const update = r.update;
+  if (!update) {
+    let version = '';
+    try {
+      version = await getVersion();
+    } catch {
+      /* ignore */
+    }
+    void show(
+      { status: "You're up to date", detail: version ? `XT Launcher v${version}` : '', indicator: 'wavy' },
+      750,
+    );
+    return launchMain();
+  }
 
-  // Update available
-  let total = 0;
-  let received = 0;
+  // Update available: wait until the queued statuses have been seen, then show live progress.
   const title = 'Downloading Updates';
   const label = `v${update.version}`;
-  render({ status: title, detail: label, indicator: 'wavy' });
+  await show({ status: title, detail: label, indicator: 'wavy' }, 300);
 
+  let total = 0;
+  let received = 0;
   try {
     await update.downloadAndInstall((event: DownloadEvent) => {
       switch (event.event) {
@@ -207,19 +235,15 @@ async function run() {
     });
     // On Windows the installer normally ends this process itself. If we are
     // still here, restart into the new version.
-    render({ status: 'Restarting XT', indicator: 'loading' });
+    await show({ status: 'Restarting XT', indicator: 'loading' }, 400);
     await relaunch();
   } catch (err) {
     console.error('Update failed:', err);
-    render({
-      status: 'Update failed',
-      detail: 'Starting the current version',
-      indicator: 'wavy',
-    });
-    await sleep(1400);
+    void show({ status: 'Update failed', detail: 'Starting the current version', indicator: 'wavy' }, 1400);
     return launchMain();
   }
 }
+
 
 // ---------------------------------------------------------------------------
 // Dev-only: ?demo=<state> renders a static state for visual checks in a browser
