@@ -8,6 +8,7 @@
     data,
     deleteProfile,
     duplicateProfile,
+    formatPlaytime,
     isXt,
     profileFromTemplate,
     profileSubtitle,
@@ -222,7 +223,7 @@
             <span class="chip-icon" class:xt={isXt(p)}><Icon name="rocket" size={20} /></span>
             <span class="text">
               <span class="title">{p.name}</span>
-              <span class="sub muted">{profileSubtitle(p)}</span>
+              <span class="sub muted">{profileSubtitle(p)}{p.playMs ? ` · played ${formatPlaytime(p.playMs)}` : ''}</span>
             </span>
             {#if p.kind === 'xt'}
               <span class="tag">Optimized</span>

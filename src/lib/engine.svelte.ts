@@ -3,7 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { currentAccount, currentProfile } from './data.svelte';
+import { currentAccount, currentProfile, recordPlaytime } from './data.svelte';
 import { go, goCreateProfile } from './nav.svelte';
 import { settings } from './settings.svelte';
 import { showToast } from './toast.svelte';
@@ -23,12 +23,53 @@ export interface LogLine {
 
 type Phase = 'idle' | 'installing' | 'running';
 
+/** Pipeline steps, in the order they normally happen. */
+export const STEPS = ['mods', 'loader', 'client', 'libraries', 'assets', 'java', 'launch'] as const;
+export type Step = (typeof STEPS)[number];
+export const STEP_LABEL: Record<Step, string> = {
+  mods: 'Mods',
+  loader: 'Loader',
+  client: 'Minecraft',
+  libraries: 'Libraries',
+  assets: 'Assets',
+  java: 'Java',
+  launch: 'Launch',
+};
+
+export interface LastSession {
+  profileName: string;
+  playedMs: number;
+  code: number | null;
+  crash: CrashInfo | null;
+  error: string;
+  cancelled: boolean;
+  at: number;
+}
+
 export const engine = $state({
   phase: 'idle' as Phase,
-  /** download stage currently running: client | libraries | assets | java */
-  stage: '',
-  label: 'Preparing Minecraft',
+  /** Profile being prepared / played */
+  profileName: '',
+  profileId: '',
+  /** Current pipeline step and its stats */
+  stage: '' as Step | '',
+  label: 'Preparing',
+  done: 0,
+  total: 0,
+  fetched: 0,
+  bytes: 0,
+  /** Bytes per second, smoothed */
+  speed: 0,
   percent: 0,
+  /** Steps seen during this launch, in order */
+  steps: [] as Step[],
+  startedAt: 0,
+  runningSince: 0,
+  cancelling: false,
+  /** Whether the launch ribbon is currently on screen (set by the ribbon) */
+  ribbonOpen: false,
+  /** Summary of the session that just ended (shown in the ribbon) */
+  last: null as LastSession | null,
   logs: [] as LogLine[],
   crash: null as CrashInfo | null,
   error: '',
@@ -49,10 +90,33 @@ function flushLogs() {
 }
 
 interface StatePayload {
-  state: 'installing' | 'running' | 'exited' | 'error';
+  state: 'installing' | 'running' | 'exited' | 'error' | 'cancelled';
   message: string | null;
   code: number | null;
   crash: CrashInfo | null;
+}
+
+function markStep(step: Step) {
+  if (!engine.steps.includes(step)) engine.steps = [...engine.steps, step];
+  engine.stage = step;
+}
+
+function finishSession(partial: Partial<LastSession>) {
+  const played = engine.runningSince ? Date.now() - engine.runningSince : 0;
+  engine.last = {
+    profileName: engine.profileName,
+    playedMs: played,
+    code: null,
+    crash: null,
+    error: '',
+    cancelled: false,
+    at: Date.now(),
+    ...partial,
+  };
+  if (played > 0) recordPlaytime(engine.profileId, played);
+  engine.phase = 'idle';
+  engine.runningSince = 0;
+  engine.cancelling = false;
 }
 
 async function onState(p: StatePayload) {
@@ -60,51 +124,94 @@ async function onState(p: StatePayload) {
   switch (p.state) {
     case 'installing':
       engine.phase = 'installing';
-      engine.label = p.message ?? 'Preparing Minecraft';
-      engine.percent = 0;
+      if (p.message === 'Launching Minecraft') {
+        markStep('launch');
+        engine.label = 'Launching';
+        engine.percent = 0;
+        engine.total = 0;
+      } else if (p.message === 'Updating mods') {
+        markStep('mods');
+        engine.label = 'Updating mods';
+      } else if (p.message) {
+        engine.label = p.message;
+      }
       break;
     case 'running':
       engine.phase = 'running';
+      engine.runningSince = Date.now();
       if (settings.afterLaunch === 'tray') void win.minimize();
       else if (settings.afterLaunch === 'close') void win.close();
       break;
     case 'exited':
-      engine.phase = 'idle';
       flushLogs();
+      if (p.crash) engine.crash = p.crash;
+      finishSession({ code: p.code, crash: p.crash });
       void win.unminimize();
       void win.setFocus();
-      if (p.crash) {
-        engine.crash = p.crash;
-        showToast(p.crash.title, 4000);
-        go('logs');
-      }
       break;
     case 'error':
-      engine.phase = 'idle';
       engine.error = p.message ?? 'Something went wrong';
-      showToast("Couldn't start the game", 4000);
+      finishSession({ error: engine.error });
       void win.unminimize();
-      go('logs');
+      break;
+    case 'cancelled':
+      finishSession({ cancelled: true });
       break;
   }
 }
 
 const STAGE_LABEL: Record<string, string> = {
-  client: 'Downloading Minecraft',
-  libraries: 'Downloading libraries',
-  assets: 'Downloading game assets',
-  java: 'Downloading Java',
+  client: 'Minecraft',
+  libraries: 'libraries',
+  assets: 'game assets',
+  java: 'Java',
+  mods: 'mods',
+  loader: 'loader',
 };
+
+let lastSample = { t: 0, bytes: 0, stage: '' };
+
+interface ProgressPayload {
+  stage: string;
+  done: number;
+  total: number;
+  label: string;
+  fetched: number;
+  bytes: number;
+}
+
+function onProgress(p: ProgressPayload) {
+  if (engine.phase !== 'installing') return;
+  const step = (STEPS as readonly string[]).includes(p.stage) ? (p.stage as Step) : null;
+  if (step) markStep(step);
+  engine.done = p.done;
+  engine.total = p.total;
+  engine.fetched = p.fetched;
+  engine.bytes = p.bytes;
+  engine.percent = p.total > 0 ? Math.min(100, (p.done / p.total) * 100) : 0;
+
+  const what = STAGE_LABEL[p.stage] ?? 'files';
+  if (engine.cancelling) engine.label = 'Cancelling';
+  else if (p.stage === 'loader') engine.label = p.label;
+  else if (p.fetched > 0) engine.label = 'Downloading ' + what;
+  else engine.label = 'Checking ' + what;
+
+  // Download speed, smoothed over samples at least 400 ms apart
+  const now = performance.now();
+  if (lastSample.stage !== p.stage || p.bytes < lastSample.bytes) {
+    lastSample = { t: now, bytes: p.bytes, stage: p.stage };
+    engine.speed = 0;
+  } else if (now - lastSample.t >= 400) {
+    const rate = ((p.bytes - lastSample.bytes) * 1000) / (now - lastSample.t);
+    engine.speed = engine.speed ? engine.speed * 0.6 + rate * 0.4 : rate;
+    lastSample = { t: now, bytes: p.bytes, stage: p.stage };
+  }
+}
 
 export async function initEngine() {
   if (!inTauri) return;
 
-  await listen<{ stage: string; done: number; total: number }>('engine-progress', (e) => {
-    const { stage, done, total } = e.payload;
-    engine.stage = stage;
-    engine.label = STAGE_LABEL[stage] ?? 'Preparing Minecraft';
-    engine.percent = total > 0 ? Math.min(100, (done / total) * 100) : 0;
-  });
+  await listen<ProgressPayload>('engine-progress', (e) => onProgress(e.payload));
   await listen<StatePayload>('game-state', (e) => void onState(e.payload));
   await listen<LogLine>('game-log', (e) => {
     pending.push(e.payload);
@@ -150,9 +257,18 @@ export async function play() {
   engine.error = '';
   engine.logs = [];
   pending = [];
+  engine.last = null;
   engine.phase = 'installing';
+  engine.profileName = profile.name;
+  engine.profileId = profile.id;
+  engine.steps = [];
+  engine.stage = '';
+  engine.done = engine.total = engine.fetched = engine.bytes = 0;
+  engine.speed = 0;
   engine.percent = 0;
-  engine.label = 'Preparing Minecraft';
+  engine.label = 'Preparing';
+  engine.startedAt = Date.now();
+  engine.cancelling = false;
 
   try {
     await invoke('launch_game', {
@@ -174,8 +290,19 @@ export async function play() {
       },
     });
   } catch (err) {
-    engine.phase = 'idle';
-    showToast(String(err));
+    engine.error = String(err);
+    finishSession({ error: engine.error });
+  }
+}
+
+/** Cancel a launch that is still preparing. */
+export async function cancelLaunch() {
+  engine.cancelling = true;
+  engine.label = 'Cancelling';
+  try {
+    await invoke('cancel_launch');
+  } catch {
+    /* ignore */
   }
 }
 
@@ -212,4 +339,9 @@ export async function loadVersionList(snapshots: boolean) {
   } catch {
     /* offline: the editor keeps what it has */
   }
+}
+
+// Dev-only hook so UI states can be previewed in a browser
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __xt: unknown }).__xt = { engine };
 }

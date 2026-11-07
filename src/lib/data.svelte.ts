@@ -27,6 +27,10 @@ export interface Profile {
   jvmArgs?: string;
   /** Use the ZGC garbage collector (always on for XT profiles) */
   zgc?: boolean;
+  /** Total time played, in ms */
+  playMs?: number;
+  /** When it was last played (epoch ms) */
+  lastPlayed?: number;
 }
 
 export const ACCOUNT_LABEL: Record<AccountType, string> = {
@@ -158,6 +162,23 @@ export function duplicateProfile(id: string): string | null {
   const copy: Profile = { ...src, id: crypto.randomUUID(), name: `${src.name} copy` };
   data.profiles.push(copy);
   return copy.id;
+}
+
+/** Add a finished session's play time to its profile. */
+export function recordPlaytime(id: string, ms: number) {
+  const p = data.profiles.find((x) => x.id === id);
+  if (!p) return;
+  p.playMs = (p.playMs ?? 0) + ms;
+  p.lastPlayed = Date.now();
+}
+
+/** "3h 12m", "45m", "under a minute" */
+export function formatPlaytime(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return 'under a minute';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h ? h + 'h ' + m + 'm' : m + 'm';
 }
 
 export function deleteProfile(id: string) {

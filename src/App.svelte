@@ -5,7 +5,8 @@
   import AccountsPanel from './components/AccountsPanel.svelte';
   import InstancesPanel from './components/InstancesPanel.svelte';
   import LogsPanel from './components/LogsPanel.svelte';
-  import { initEngine } from './lib/engine.svelte';
+  import LaunchRibbon from './components/LaunchRibbon.svelte';
+  import { engine, initEngine } from './lib/engine.svelte';
   import { nav } from './lib/nav.svelte';
   import { settings } from './lib/settings.svelte';
   import { BRAND_SEED, applyWallpaper, wp } from './lib/wallpaper.svelte';
@@ -33,7 +34,7 @@
 
     <Titlebar />
 
-    <main>
+    <main class:lifted={engine.ribbonOpen}>
       {#if nav.view === 'home'}
         <HomeCard />
       {:else if nav.view === 'settings'}
@@ -47,9 +48,11 @@
       {/if}
     </main>
 
+    <LaunchRibbon />
+
     {#if toast.text}
       {#key toast.id}
-        <div class="toast" role="status">{toast.text}</div>
+        <div class="toast" class:lifted={engine.ribbonOpen} role="status">{toast.text}</div>
       {/key}
     {/if}
   </div>
@@ -87,6 +90,10 @@
     display: grid;
     place-items: center;
     padding: 0 24px 24px;
+    transition: padding-bottom 420ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  main.lifted {
+    padding-bottom: 150px;
   }
   .toast {
     position: absolute;
@@ -103,6 +110,9 @@
     box-shadow: 0 8px 28px rgb(0 0 0 / 0.4);
     animation: toast 220ms cubic-bezier(0.2, 0, 0, 1);
     z-index: 30;
+  }
+  .toast.lifted {
+    bottom: 132px;
   }
   @keyframes toast {
     from {

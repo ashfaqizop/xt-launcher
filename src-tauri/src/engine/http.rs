@@ -57,14 +57,15 @@ pub async fn is_current(path: &Path, size: Option<u64>) -> bool {
 
 /// Download `url` to `dest` (skipped when already current), verifying SHA-1 when given.
 /// Writes to a `.part` file first and retries a few times.
+/// Returns `true` when the file was fetched, `false` when it was already present.
 pub async fn download(
     url: &str,
     dest: &Path,
     sha1: Option<&str>,
     size: Option<u64>,
-) -> Result<()> {
+) -> Result<bool> {
     if is_current(dest, size).await {
-        return Ok(());
+        return Ok(false);
     }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).await?;
@@ -73,7 +74,7 @@ pub async fn download(
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 0..3u64 {
         match try_download(url, dest, sha1).await {
-            Ok(()) => return Ok(()),
+            Ok(()) => return Ok(true),
             Err(e) => {
                 last_err = Some(e);
                 tokio::time::sleep(Duration::from_millis(400 * (attempt + 1))).await;

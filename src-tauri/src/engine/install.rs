@@ -10,28 +10,67 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 const PARALLEL_DOWNLOADS: usize = 16;
 
+// ---------------------------------------------------------------------------
+// Cancellation (one launch at a time, so a single flag is enough)
+// ---------------------------------------------------------------------------
+
+pub const CANCELLED: &str = "Launch cancelled";
+static CANCEL: AtomicBool = AtomicBool::new(false);
+
+pub fn request_cancel() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+
+pub fn reset_cancel() {
+    CANCEL.store(false, Ordering::SeqCst);
+}
+
+/// Err(CANCELLED) once the user pressed Cancel.
+pub fn check_cancel() -> Result<()> {
+    if CANCEL.load(Ordering::SeqCst) {
+        Err(anyhow!(CANCELLED))
+    } else {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Progress
+// ---------------------------------------------------------------------------
+
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Progress {
     pub stage: String,
     pub done: usize,
     pub total: usize,
     pub label: String,
+    /// Files actually downloaded so far in this stage (the rest were already present)
+    pub fetched: usize,
+    /// Bytes downloaded so far in this stage
+    pub bytes: u64,
+}
+
+fn emit(app: &AppHandle, progress: Progress) {
+    let _ = app.emit("engine-progress", progress);
 }
 
 pub fn emit_progress(app: &AppHandle, stage: &str, done: usize, total: usize, label: &str) {
-    let _ = app.emit(
-        "engine-progress",
+    emit(
+        app,
         Progress {
             stage: stage.to_string(),
             done,
             total,
             label: label.to_string(),
+            fetched: 0,
+            bytes: 0,
         },
     );
 }
@@ -45,6 +84,7 @@ pub struct Task {
 
 /// Run downloads concurrently, reporting progress under `stage`.
 pub async fn run_tasks(app: &AppHandle, stage: &str, label: &str, tasks: Vec<Task>) -> Result<()> {
+    check_cancel()?;
     let total = tasks.len();
     if total == 0 {
         return Ok(());
@@ -52,19 +92,39 @@ pub async fn run_tasks(app: &AppHandle, stage: &str, label: &str, tasks: Vec<Tas
     emit_progress(app, stage, 0, total, label);
 
     let done = Arc::new(AtomicUsize::new(0));
-    let step = (total / 100).max(1);
+    let fetched = Arc::new(AtomicUsize::new(0));
+    let bytes = Arc::new(AtomicU64::new(0));
+    let step = (total / 150).max(1);
 
     let mut stream = futures_util::stream::iter(tasks)
         .map(|task| {
             let done = Arc::clone(&done);
+            let fetched = Arc::clone(&fetched);
+            let bytes = Arc::clone(&bytes);
             let app = app.clone();
             let stage = stage.to_string();
             let label = label.to_string();
             async move {
-                http::download(&task.url, &task.dest, task.sha1.as_deref(), task.size).await?;
+                check_cancel()?;
+                let downloaded =
+                    http::download(&task.url, &task.dest, task.sha1.as_deref(), task.size).await?;
+                if downloaded {
+                    fetched.fetch_add(1, Ordering::Relaxed);
+                    bytes.fetch_add(task.size.unwrap_or(0), Ordering::Relaxed);
+                }
                 let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-                if n % step == 0 || n == total {
-                    emit_progress(&app, &stage, n, total, &label);
+                if downloaded || n % step == 0 || n == total {
+                    emit(
+                        &app,
+                        Progress {
+                            stage,
+                            done: n,
+                            total,
+                            label,
+                            fetched: fetched.load(Ordering::Relaxed),
+                            bytes: bytes.load(Ordering::Relaxed),
+                        },
+                    );
                 }
                 Ok::<(), anyhow::Error>(())
             }

@@ -3,7 +3,7 @@
   import { go, goCreateProfile } from '../lib/nav.svelte';
   import { showToast } from '../lib/toast.svelte';
   import { checkForUpdates } from '../lib/updater';
-  import { engine, openFolder, play, stop } from '../lib/engine.svelte';
+  import { engine, openFolder, play } from '../lib/engine.svelte';
   import {
     ACCOUNT_LABEL,
     isXt,
@@ -73,22 +73,11 @@
     </button>
   {/if}
 
-  <!-- Play -->
-  {#if engine.phase === 'running'}
-    <m3e-button class="play" variant="tonal" size="large" onclick={stop}>Stop game</m3e-button>
-  {:else if engine.phase === 'installing'}
-    <m3e-button class="play" variant="tonal" size="large" disabled>
-      <span slot="icon">
-        <m3e-circular-progress-indicator variant="wavy" indeterminate={!engine.percent} value={engine.percent} max="100" class="mini"></m3e-circular-progress-indicator>
-      </span>
-      {engine.label}{engine.percent ? ` ${Math.floor(engine.percent)}%` : ''}
-    </m3e-button>
-  {:else}
-    <m3e-button class="play" variant="filled" size="large" onclick={play}>
-      <span slot="icon" class="play-ic"><Icon name="play" size={28} /></span>
-      Play
-    </m3e-button>
-  {/if}
+  <!-- Play (progress and controls live in the launch ribbon) -->
+  <m3e-button class="play" variant={engine.phase === 'idle' ? 'filled' : 'tonal'} size="large" disabled={engine.phase !== 'idle'} onclick={play}>
+    <span slot="icon" class="play-ic"><Icon name="play" size={28} /></span>
+    {engine.phase === 'running' ? 'Playing' : engine.phase === 'installing' ? 'Starting…' : 'Play'}
+  </m3e-button>
 
   <!-- Quick actions -->
   <div class="actions">
@@ -197,11 +186,6 @@
     margin-top: 4px;
     width: 100%;
     --m3e-button-large-container-height: 64px;
-  }
-
-  .mini {
-    --m3e-circular-wavy-progress-indicator-diameter: 28px;
-    --m3e-circular-progress-indicator-thickness: 3px;
   }
 
   .actions {

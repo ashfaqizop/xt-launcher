@@ -27,6 +27,7 @@ pub fn run() {
             finish_splash,
             engine::session::launch_game,
             engine::session::kill_game,
+            engine::session::cancel_launch,
             engine::session::get_logs,
             engine::session::engine_info,
             engine::session::list_versions,

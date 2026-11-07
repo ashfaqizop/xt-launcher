@@ -217,6 +217,7 @@ async fn sync_xt_mods(app: &AppHandle, paths: &Paths, req: &LaunchRequest, tier:
 }
 
 async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
+    install::reset_cancel();
     app.state::<Session>().logs.lock().unwrap().clear();
     let paths = Paths::new(app)?;
     let game_dir = paths.instance(&req.profile_id);
@@ -248,6 +249,7 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         sync_xt_mods(app, &paths, &req, tier, &mc_id).await;
     }
 
+    install::check_cancel()?;
     let (version, root_id) = install::resolve(&paths, &version_id).await?;
     install::prepare(app, &paths, &version, &root_id).await?;
 
@@ -267,6 +269,7 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         None => java::ensure(app, &paths, &component).await?,
     };
 
+    install::check_cancel()?;
     let natives = launch::extract_natives(&paths, &version).await?;
 
     emit_state(app, "installing", Some("Signing in".to_string()), None, None);
@@ -302,6 +305,8 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     };
     let args = launch::build_args(&paths, &version, &root_id, &natives, &game_dir, &account, &options)?;
 
+    install::check_cancel()?;
+    emit_state(app, "installing", Some("Launching Minecraft".to_string()), None, None);
     apply_gpu_preference(&java_exe, req.gpu.as_deref());
 
     // Start the game
@@ -385,11 +390,21 @@ pub async fn launch_game(app: AppHandle, req: LaunchRequest) -> Result<(), Strin
 
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_launch(&app, req).await {
-            emit_state(&app, "error", Some(format!("{e:#}")), None, None);
+            if e.chain().any(|c| c.to_string() == install::CANCELLED) {
+                emit_state(&app, "cancelled", None, None, None);
+            } else {
+                emit_state(&app, "error", Some(format!("{e:#}")), None, None);
+            }
         }
         app.state::<Session>().busy.store(false, Ordering::SeqCst);
     });
     Ok(())
+}
+
+/// Stop a launch that is still preparing (downloads stop at the next file).
+#[tauri::command]
+pub fn cancel_launch() {
+    install::request_cancel();
 }
 
 #[tauri::command]
