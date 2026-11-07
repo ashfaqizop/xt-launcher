@@ -1,6 +1,6 @@
 [package]
 name = "xt-launcher"
-version = "0.1.0"
+version = "0.1.1"
 description = "XT Launcher - a clean, fast Minecraft Java launcher"
 authors = ["XT"]
 edition = "2021"
