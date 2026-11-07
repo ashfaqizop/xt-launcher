@@ -83,7 +83,7 @@ let pending: LogLine[] = [];
 let flushTimer: ReturnType<typeof setInterval> | undefined;
 
 function flushLogs() {
-  if (!pending.length) return;
+  if (!pending.length || document.visibilityState === 'hidden') return;
   const next = engine.logs.concat(pending);
   pending = [];
   engine.logs = next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
@@ -94,6 +94,16 @@ interface StatePayload {
   message: string | null;
   code: number | null;
   crash: CrashInfo | null;
+}
+
+async function refreshLogs() {
+  try {
+    const lines = await invoke<LogLine[]>('get_logs');
+    pending = [];
+    engine.logs = lines.length > MAX_LINES ? lines.slice(lines.length - MAX_LINES) : lines;
+  } catch {
+    /* keep what we have */
+  }
 }
 
 function markStep(step: Step) {
@@ -139,11 +149,12 @@ async function onState(p: StatePayload) {
     case 'running':
       engine.phase = 'running';
       engine.runningSince = Date.now();
-      if (settings.afterLaunch === 'tray') void win.minimize();
-      else if (settings.afterLaunch === 'close') void win.close();
+      // "hide" is handled by the engine (it hides and restores the window itself)
+      if (settings.afterLaunch === 'close') void win.close();
       break;
     case 'exited':
       flushLogs();
+      void refreshLogs();
       if (p.crash) engine.crash = p.crash;
       finishSession({ code: p.code, crash: p.crash });
       void win.unminimize();
@@ -278,6 +289,7 @@ export async function play() {
         loaderVersion: profile.loaderVersion || null,
         mc: profile.mc,
         account: { name: account.name, kind: account.type, id: account.id },
+        afterLaunch: settings.afterLaunch,
         msClientId: settings.msClientId || null,
         ramMb: profile.ramMb ?? (settings.ramAuto ? autoMemoryMb() : settings.ramMb),
         jvmArgs: profile.jvmArgs || null,

@@ -27,6 +27,8 @@ const MAX_LOG_LINES: usize = 5000;
 pub struct Session {
     busy: AtomicBool,
     killed: AtomicBool,
+    /// The launcher window is hidden while the game runs: don't stream logs to it
+    hidden: AtomicBool,
     pid: Mutex<Option<u32>>,
     logs: Mutex<VecDeque<LogLine>>,
 }
@@ -115,6 +117,9 @@ pub struct LaunchRequest {
     /// Azure client id for Microsoft accounts (overrides the built-in one)
     #[serde(default)]
     pub ms_client_id: Option<String>,
+    /// keep | hide | close: what the launcher window does while the game runs
+    #[serde(default)]
+    pub after_launch: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +149,9 @@ where
                         logs.pop_front();
                     }
                     logs.push_back(entry.clone());
+                    if session.hidden.load(Ordering::Relaxed) {
+                        continue;
+                    }
                 }
                 let _ = app.emit("game-log", entry);
             }
@@ -336,6 +344,15 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     }
     emit_state(app, "running", None, None, None);
 
+    // "Hide": the window disappears completely (no taskbar, no tray) until the game exits
+    let hide = req.after_launch.as_deref() == Some("hide");
+    if hide {
+        app.state::<Session>().hidden.store(true, Ordering::SeqCst);
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.hide();
+        }
+    }
+
     let out_task = child
         .stdout
         .take()
@@ -377,6 +394,14 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         None
     };
 
+    if hide {
+        session.hidden.store(false, Ordering::SeqCst);
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }
     emit_state(app, "exited", None, code, crash);
     Ok(())
 }

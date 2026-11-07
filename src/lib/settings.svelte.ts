@@ -9,7 +9,8 @@ export interface Settings {
   wallpaper: string;
   blur: number; // px
   dim: number; // percent
-  afterLaunch: 'tray' | 'close' | 'keep';
+  /** keep: stay open; hide: disappear until the game closes; close: quit the launcher */
+  afterLaunch: 'keep' | 'hide' | 'close';
   crashScan: boolean;
   alertRelease: boolean;
   alertSnapshot: boolean;
@@ -35,7 +36,7 @@ export const DEFAULTS: Settings = {
   wallpaper: 'caves-and-cliffs',
   blur: 6,
   dim: 25,
-  afterLaunch: 'tray',
+  afterLaunch: 'hide',
   crashScan: true,
   alertRelease: false,
   alertSnapshot: false,
@@ -58,7 +59,12 @@ const KEY = 'xt.settings.v1';
 function load(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const saved = { ...DEFAULTS, ...JSON.parse(raw) } as Settings;
+      // 0.1.0/0.1.1 called the hide option "tray"
+      if ((saved.afterLaunch as string) === 'tray') saved.afterLaunch = 'hide';
+      return saved;
+    }
   } catch {
     /* storage unavailable: fall back to defaults */
   }

@@ -274,9 +274,9 @@
           <span class="label">After starting Minecraft</span>
           <m3e-form-field variant="outlined" class="ctl">
             <m3e-select use:selectValue={settings.afterLaunch} aria-label="After starting Minecraft" onchange={(e: Event) => (settings.afterLaunch = val(e) as typeof settings.afterLaunch)}>
-              <m3e-option value="tray">Minimize launcher</m3e-option>
+              <m3e-option value="hide">Hide until Minecraft closes</m3e-option>
               <m3e-option value="close">Close launcher</m3e-option>
-              <m3e-option value="keep">Keep open</m3e-option>
+              <m3e-option value="keep">Keep the launcher open</m3e-option>
             </m3e-select>
           </m3e-form-field>
         </div>

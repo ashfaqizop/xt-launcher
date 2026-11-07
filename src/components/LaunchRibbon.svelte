@@ -7,7 +7,9 @@
 
   // A ticking clock for elapsed / played time
   let now = $state(Date.now());
-  const tick = setInterval(() => (now = Date.now()), 1000);
+  const tick = setInterval(() => {
+    if (document.visibilityState !== 'hidden') now = Date.now();
+  }, 1000);
   onDestroy(() => clearInterval(tick));
 
   // Keep the summary of a finished session visible for a while, errors until dismissed
