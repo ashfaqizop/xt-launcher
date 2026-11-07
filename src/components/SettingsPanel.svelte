@@ -8,6 +8,7 @@
   import { GALLERY, refreshCustomFlag, setCustomWallpaper, wp } from '../lib/wallpaper.svelte';
   import { showToast } from '../lib/toast.svelte';
   import { engine } from '../lib/engine.svelte';
+  import { autoMemoryMb, gib, loadSystem, maxGameMemoryGiB, system } from '../lib/system.svelte';
   import { checkForUpdates, type UpdateResult } from '../lib/updater';
   import { getVersion } from '@tauri-apps/api/app';
   import { openUrl } from '@tauri-apps/plugin-opener';
@@ -27,7 +28,33 @@
   let installing = $state(false);
   let percent = $state(0);
 
+  // Java: "auto", a detected install's path, or "custom" (typed path)
+  const javaChoice = $derived(
+    settings.javaMode === 'auto'
+      ? 'auto'
+      : system.javas.some((j) => j.path === settings.javaPath)
+        ? settings.javaPath
+        : 'custom',
+  );
+  function onJava(e: Event) {
+    const v = val(e);
+    if (v === 'auto') settings.javaMode = 'auto';
+    else if (v === 'custom') {
+      settings.javaMode = 'custom';
+      if (system.javas.some((j) => j.path === settings.javaPath)) settings.javaPath = '';
+    } else {
+      settings.javaMode = 'custom';
+      settings.javaPath = v;
+    }
+  }
+
+  // Graphics: only offer a choice when the PC has more than one card
+  const discrete = $derived(system.gpus.filter((g) => !g.integrated));
+  const integrated = $derived(system.gpus.filter((g) => g.integrated));
+  const hasChoice = $derived(discrete.length > 0 && integrated.length > 0);
+
   onMount(() => {
+    void loadSystem();
     void refreshCustomFlag();
     if (inTauri) void getVersion().then((v) => (version = v));
   });
@@ -102,42 +129,74 @@
         <div class="row">
           <span class="label">Java</span>
           <m3e-form-field variant="outlined" class="ctl">
-            <m3e-select value={settings.javaMode} aria-label="Java runtime" onchange={(e: Event) => (settings.javaMode = val(e) as typeof settings.javaMode)}>
+            <m3e-select value={javaChoice} aria-label="Java runtime" onchange={onJava}>
               <m3e-option value="auto">Automatic (recommended)</m3e-option>
-              <m3e-option value="custom">Custom path</m3e-option>
+              {#each system.javas as j (j.path)}
+                <m3e-option value={j.path}>Java {j.major} · {j.vendor}{j.managed ? ' (XT)' : ''}</m3e-option>
+              {/each}
+              <m3e-option value="custom">Other location…</m3e-option>
             </m3e-select>
           </m3e-form-field>
         </div>
-        {#if settings.javaMode === 'custom'}
+        {#if javaChoice === 'custom'}
           <div class="row">
             <span class="label">Java path</span>
             <m3e-form-field variant="outlined" class="ctl">
-              <input bind:value={settings.javaPath} placeholder="C:\Program Files\Java\bin\javaw.exe" spellcheck="false" aria-label="Java path" />
+              <input bind:value={settings.javaPath} placeholder="C:Program FilesJavajdk-21injava.exe" spellcheck="false" aria-label="Java path" />
             </m3e-form-field>
           </div>
+        {:else if javaChoice !== 'auto'}
+          <div class="row">
+            <span class="label"></span>
+            <span class="muted note">{settings.javaPath}</span>
+          </div>
+        {:else}
+          <div class="row">
+            <span class="label"></span>
+            <span class="muted note">Each Minecraft version gets the Java it needs, downloaded automatically.</span>
+          </div>
         {/if}
+
         <div class="row">
           <span class="label">Memory</span>
-          <div class="ctl mem">
-            <label class="auto muted">
-              Auto
-              <m3e-switch checked={settings.ramAuto} onchange={(e: Event) => (settings.ramAuto = chk(e))}></m3e-switch>
-            </label>
-            <m3e-slider min="1" max="16" step="0.5" labelled disabled={settings.ramAuto} class="slider" aria-label="Memory in GiB">
-              <m3e-slider-thumb value={ramGiB} oninput={(e: Event) => (settings.ramMb = Math.round(num(e) * 1024))}></m3e-slider-thumb>
-            </m3e-slider>
-            <span class="muted amount">{settings.ramAuto ? 'Auto' : `${ramGiB} GiB`}</span>
-          </div>
+          <label class="auto">
+            <m3e-switch checked={settings.ramAuto} onchange={(e: Event) => (settings.ramAuto = chk(e))}></m3e-switch>
+            <span>Automatic</span>
+          </label>
         </div>
         <div class="row">
+          <span class="label"></span>
+          {#if settings.ramAuto}
+            <span class="muted note">
+              {gib(autoMemoryMb())} GiB{system.totalMemoryMb ? ` of ${gib(system.totalMemoryMb)} GiB installed` : ''}, chosen for this PC
+            </span>
+          {:else}
+            <div class="ctl mem">
+              <m3e-slider min="1" max={maxGameMemoryGiB()} step="0.5" labelled class="slider" aria-label="Memory in GiB">
+                <m3e-slider-thumb value={Math.min(ramGiB, maxGameMemoryGiB())} oninput={(e: Event) => (settings.ramMb = Math.round(num(e) * 1024))}></m3e-slider-thumb>
+              </m3e-slider>
+              <span class="amount">{gib(settings.ramMb)} GiB</span>
+            </div>
+          {/if}
+        </div>
+
+        <div class="row">
           <span class="label">Graphics card</span>
-          <m3e-form-field variant="outlined" class="ctl">
-            <m3e-select value={settings.gpu} aria-label="Graphics card" onchange={(e: Event) => (settings.gpu = val(e) as typeof settings.gpu)}>
-              <m3e-option value="default">System default</m3e-option>
-              <m3e-option value="high">High performance (discrete)</m3e-option>
-              <m3e-option value="low">Power saving (integrated)</m3e-option>
-            </m3e-select>
-          </m3e-form-field>
+          {#if hasChoice}
+            <m3e-form-field variant="outlined" class="ctl">
+              <m3e-select value={settings.gpu} aria-label="Graphics card" onchange={(e: Event) => (settings.gpu = val(e) as typeof settings.gpu)}>
+                <m3e-option value="default">Let Windows decide</m3e-option>
+                {#each discrete as g (g.name)}
+                  <m3e-option value="high">{g.name}</m3e-option>
+                {/each}
+                {#each integrated as g (g.name)}
+                  <m3e-option value="low">{g.name}</m3e-option>
+                {/each}
+              </m3e-select>
+            </m3e-form-field>
+          {:else}
+            <span class="muted note">{system.gpus[0]?.name ?? 'Detecting…'}</span>
+          {/if}
         </div>
 
         <h3>Version list</h3>
@@ -344,11 +403,17 @@
   .auto {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
+    gap: 12px;
+    font-size: 14px;
+    cursor: pointer;
   }
   .slider {
     flex: 1;
+  }
+  .note {
+    font-size: 12.5px;
+    line-height: 1.45;
+    word-break: break-all;
   }
   .amount {
     min-width: 54px;

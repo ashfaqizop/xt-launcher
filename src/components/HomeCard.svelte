@@ -1,12 +1,12 @@
 <script lang="ts">
   import Icon from '../lib/Icon.svelte';
-  import { go } from '../lib/nav.svelte';
+  import { go, goCreateProfile } from '../lib/nav.svelte';
   import { showToast } from '../lib/toast.svelte';
   import { checkForUpdates } from '../lib/updater';
   import { engine, openFolder, play, stop } from '../lib/engine.svelte';
   import {
     ACCOUNT_LABEL,
-    allProfiles,
+    isXt,
     currentAccount,
     currentProfile,
     data,
@@ -45,22 +45,33 @@
   </m3e-menu>
 
   <!-- Profile -->
-  <button class="picker" aria-label="Choose profile">
-    <m3e-menu-trigger for="profile-menu"></m3e-menu-trigger>
-    <span class="chip-icon" class:xt={profile.kind !== 'custom'}><Icon name="rocket" size={20} /></span>
-    <span class="text">
-      <span class="title">{profile.name}</span>
-      <span class="sub muted">{profileSubtitle(profile)}</span>
-    </span>
-    <Icon name="down" size={22} />
-  </button>
-  <m3e-menu id="profile-menu">
-    {#each allProfiles() as p (p.id)}
-      <m3e-menu-item onclick={() => (data.profileId = p.id)}>{p.name} · {profileSubtitle(p)}</m3e-menu-item>
-    {/each}
-    <m3e-divider></m3e-divider>
-    <m3e-menu-item onclick={() => go('instances')}>Manage profiles…</m3e-menu-item>
-  </m3e-menu>
+  {#if profile}
+    <button class="picker" aria-label="Choose profile">
+      <m3e-menu-trigger for="profile-menu"></m3e-menu-trigger>
+      <span class="chip-icon" class:xt={isXt(profile)}><Icon name="rocket" size={20} /></span>
+      <span class="text">
+        <span class="title">{profile.name}</span>
+        <span class="sub muted">{profileSubtitle(profile)}</span>
+      </span>
+      <Icon name="down" size={22} />
+    </button>
+    <m3e-menu id="profile-menu">
+      {#each data.profiles as p (p.id)}
+        <m3e-menu-item onclick={() => (data.profileId = p.id)}>{p.name} · {profileSubtitle(p)}</m3e-menu-item>
+      {/each}
+      <m3e-divider></m3e-divider>
+      <m3e-menu-item onclick={goCreateProfile}>New profile…</m3e-menu-item>
+      <m3e-menu-item onclick={() => go('instances')}>Manage profiles…</m3e-menu-item>
+    </m3e-menu>
+  {:else}
+    <button class="picker empty" aria-label="Create a profile" onclick={goCreateProfile}>
+      <span class="chip-icon xt"><Icon name="add" size={22} /></span>
+      <span class="text">
+        <span class="title">Create a profile</span>
+        <span class="sub muted">XT Optimized is recommended</span>
+      </span>
+    </button>
+  {/if}
 
   <!-- Play -->
   {#if engine.phase === 'running'}
@@ -107,7 +118,7 @@
     <m3e-menu id="more-menu" position-x="before">
       <m3e-menu-item onclick={() => go('settings', 'minecraft')}>Game settings</m3e-menu-item>
       <m3e-menu-item onclick={() => go('settings', 'launcher')}>Launcher settings</m3e-menu-item>
-      <m3e-menu-item onclick={() => go('instances')}>Manage profiles</m3e-menu-item>
+      <m3e-menu-item onclick={() => go('instances')}>Profiles</m3e-menu-item>
       <m3e-menu-item onclick={() => go('accounts')}>Manage accounts</m3e-menu-item>
       <m3e-divider></m3e-divider>
       <m3e-menu-item onclick={() => go('settings', 'about')}>About XT Launcher</m3e-menu-item>

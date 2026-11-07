@@ -36,6 +36,7 @@ pub fn run() {
             engine::auth::ms_has_builtin_client,
             engine::auth::ely_login,
             engine::auth::forget_account,
+            engine::system::system_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running XT Launcher");

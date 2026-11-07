@@ -1,5 +1,5 @@
-// Accounts and profiles. The profile list is static sample data until the Rust
-// engine owns it; accounts and the current selection persist in localStorage.
+// Accounts and profiles, persisted in localStorage. There are no built-in profiles:
+// the user creates them, with XT Optimized / XT Optimized+ offered as recommended templates.
 
 import { versions } from './versions.svelte';
 
@@ -25,7 +25,7 @@ export interface Profile {
   ramMb?: number | null;
   /** Extra JVM arguments, space separated */
   jvmArgs?: string;
-  /** Use the ZGC garbage collector (custom profiles; the XT profiles always do) */
+  /** Use the ZGC garbage collector (always on for XT profiles) */
   zgc?: boolean;
 }
 
@@ -43,21 +43,49 @@ export const LOADER_LABEL: Record<Loader, string> = {
   neoforge: 'NeoForge',
 };
 
-/** Built in and not editable; duplicate one to customize it. */
-export const BUILTIN_PROFILES: Profile[] = [
-  { id: 'xt', name: 'XT Optimized', kind: 'xt', loader: 'fabric', mc: 'latest' },
-  { id: 'xt-plus', name: 'XT Optimized+', kind: 'xt-plus', loader: 'fabric', mc: 'latest' },
+export type ProfileKind = Profile['kind'];
+
+/** A starting point offered on the New profile page. */
+export interface Template {
+  kind: ProfileKind;
+  name: string;
+  summary: string;
+  mods: string;
+  recommended: boolean;
+}
+
+export const TEMPLATES: Template[] = [
+  {
+    kind: 'xt',
+    name: 'XT Optimized',
+    summary: 'Fabric with hand-picked performance mods and ZGC. The fastest way to play.',
+    mods: 'Sodium, Lithium, FerriteCore, Entity Culling, ImmediatelyFast, ModernFix, Dynamic FPS',
+    recommended: true,
+  },
+  {
+    kind: 'xt-plus',
+    name: 'XT Optimized+',
+    summary: 'Everything in XT Optimized plus quality-of-life mods.',
+    mods: "Mod Menu, Xaero's World Map and Minimap, AppleSkin, Zoomify, Shulker Box Tooltip, Gamma Utilities",
+    recommended: true,
+  },
+  {
+    kind: 'custom',
+    name: 'Custom',
+    summary: 'Pick any loader and version: Vanilla, Fabric, Quilt, Forge or NeoForge.',
+    mods: '',
+    recommended: false,
+  },
 ];
 
-const SEED_PROFILES: Profile[] = [
-  { id: 'vanilla', name: 'Vanilla', kind: 'custom', loader: 'vanilla', mc: 'latest' },
-];
+/** XT profiles always run Fabric with the curated mods and ZGC. */
+export const isXt = (p: Pick<Profile, 'kind'>) => p.kind !== 'custom';
 
 interface Persisted {
   accounts: Account[];
   accountId: string;
   profileId: string;
-  /** User-created profiles */
+  /** Profiles the user created */
   profiles: Profile[];
 }
 
@@ -68,24 +96,18 @@ function load(): Persisted {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw) as Partial<Persisted>;
-      const profiles = Array.isArray(p.profiles) ? p.profiles : SEED_PROFILES.map((x) => ({ ...x }));
-      const known = [...BUILTIN_PROFILES, ...profiles];
+      const profiles = Array.isArray(p.profiles) ? p.profiles : [];
       return {
         accounts: Array.isArray(p.accounts) ? p.accounts : [],
         accountId: p.accountId ?? '',
-        profileId: known.some((x) => x.id === p.profileId) ? (p.profileId as string) : 'xt',
+        profileId: profiles.some((x) => x.id === p.profileId) ? (p.profileId as string) : (profiles[0]?.id ?? ''),
         profiles,
       };
     }
   } catch {
     /* ignore */
   }
-  return {
-    accounts: [],
-    accountId: '',
-    profileId: 'xt',
-    profiles: SEED_PROFILES.map((x) => ({ ...x })),
-  };
+  return { accounts: [], accountId: '', profileId: '', profiles: [] };
 }
 
 export const data: Persisted = $state(load());
@@ -102,25 +124,38 @@ $effect.root(() => {
 });
 
 export const currentAccount = () => data.accounts.find((a) => a.id === data.accountId) ?? null;
-export const allProfiles = (): Profile[] => [...BUILTIN_PROFILES, ...data.profiles];
-export const currentProfile = () =>
-  allProfiles().find((p) => p.id === data.profileId) ?? BUILTIN_PROFILES[0];
+export const currentProfile = (): Profile | null => data.profiles.find((p) => p.id === data.profileId) ?? null;
 
-export function newProfile(): Profile {
-  return { id: crypto.randomUUID(), name: '', kind: 'custom', loader: 'vanilla', mc: 'latest', ramMb: null, jvmArgs: '' };
+/** A new, unsaved profile based on a template. */
+export function profileFromTemplate(kind: ProfileKind): Profile {
+  const t = TEMPLATES.find((x) => x.kind === kind) ?? TEMPLATES[2];
+  const taken = new Set(data.profiles.map((p) => p.name));
+  let name = kind === 'custom' ? '' : t.name;
+  for (let n = 2; name && taken.has(name); n++) name = `${t.name} ${n}`;
+  return {
+    id: crypto.randomUUID(),
+    name,
+    kind,
+    loader: kind === 'custom' ? 'vanilla' : 'fabric',
+    mc: 'latest',
+    ramMb: null,
+    jvmArgs: '',
+    zgc: kind !== 'custom',
+  };
 }
 
-/** Add or update a custom profile. */
+/** Add or update a profile (XT profiles are always Fabric). */
 export function saveProfile(p: Profile) {
+  const next: Profile = isXt(p) ? { ...p, loader: 'fabric', zgc: true } : { ...p };
   const i = data.profiles.findIndex((x) => x.id === p.id);
-  if (i >= 0) data.profiles[i] = { ...p, kind: 'custom' };
-  else data.profiles.push({ ...p, kind: 'custom' });
+  if (i >= 0) data.profiles[i] = next;
+  else data.profiles.push(next);
 }
 
 export function duplicateProfile(id: string): string | null {
-  const src = allProfiles().find((p) => p.id === id);
+  const src = data.profiles.find((p) => p.id === id);
   if (!src) return null;
-  const copy: Profile = { ...src, id: crypto.randomUUID(), name: `${src.name} copy`, kind: 'custom' };
+  const copy: Profile = { ...src, id: crypto.randomUUID(), name: `${src.name} copy` };
   data.profiles.push(copy);
   return copy.id;
 }
@@ -129,7 +164,7 @@ export function deleteProfile(id: string) {
   const i = data.profiles.findIndex((p) => p.id === id);
   if (i < 0) return;
   data.profiles.splice(i, 1);
-  if (data.profileId === id) data.profileId = 'xt';
+  if (data.profileId === id) data.profileId = data.profiles[0]?.id ?? '';
 }
 
 export function profileSubtitle(p: Profile) {

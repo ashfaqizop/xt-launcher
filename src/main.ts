@@ -23,6 +23,8 @@ import './styles/app.css';
 import { mount } from 'svelte';
 import App from './App.svelte';
 
-const app = mount(App, { target: document.getElementById('app')! });
+// m3e-theme must be a direct child of <body>: only then does it theme pop-ups that
+// render in the top layer (select panels, menus).
+const app = mount(App, { target: document.body });
 
 export default app;

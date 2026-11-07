@@ -4,10 +4,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { currentAccount, currentProfile } from './data.svelte';
-import { go } from './nav.svelte';
+import { go, goCreateProfile } from './nav.svelte';
 import { settings } from './settings.svelte';
 import { showToast } from './toast.svelte';
 import { versions } from './versions.svelte';
+import { autoMemoryMb, loadSystem } from './system.svelte';
 
 export interface CrashInfo {
   title: string;
@@ -109,6 +110,7 @@ export async function initEngine() {
     pending.push(e.payload);
   });
   flushTimer ??= setInterval(flushLogs, 120);
+  void loadSystem();
 
   try {
     const info = await invoke<{ dataDir: string }>('engine_info');
@@ -130,6 +132,11 @@ export async function initEngine() {
 export async function play() {
   const account = currentAccount();
   const profile = currentProfile();
+  if (!profile) {
+    showToast('Create a profile first');
+    goCreateProfile();
+    return;
+  }
   if (!account) {
     showToast('Add an account to play');
     go('accounts');
@@ -155,7 +162,7 @@ export async function play() {
         mc: profile.mc,
         account: { name: account.name, kind: account.type, id: account.id },
         msClientId: settings.msClientId || null,
-        ramMb: profile.ramMb ?? (settings.ramAuto ? null : settings.ramMb),
+        ramMb: profile.ramMb ?? (settings.ramAuto ? autoMemoryMb() : settings.ramMb),
         jvmArgs: profile.jvmArgs || null,
         xtTier: profile.kind === 'custom' ? null : profile.kind,
         jvmPreset: profile.kind !== 'custom' || profile.zgc ? 'zgc' : null,
@@ -186,7 +193,7 @@ export async function openFolder(kind: 'root' | 'game' | 'mods') {
     return;
   }
   try {
-    await invoke('open_dir', { kind, profileId: currentProfile().id });
+    await invoke('open_dir', { kind, profileId: currentProfile()?.id ?? null });
   } catch (err) {
     showToast(String(err));
   }
