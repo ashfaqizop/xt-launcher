@@ -3,6 +3,13 @@
   import { onMount } from 'svelte';
   import Icon from '../lib/Icon.svelte';
   import Panel from './Panel.svelte';
+  import IconPicker from './IconPicker.svelte';
+  import RamSlider from './RamSlider.svelte';
+  import ProfileIcon from '../lib/ProfileIcon.svelte';
+  import LoaderLogo from '../lib/LoaderLogo.svelte';
+  import { sortable } from '../lib/sortable';
+  import { formatBytes, lastPlayedText } from '../lib/time';
+  import { showToast } from '../lib/toast.svelte';
   import {
     LOADER_LABEL,
     TEMPLATES,
@@ -11,6 +18,7 @@
     duplicateProfile,
     formatPlaytime,
     isXt,
+    moveProfile,
     profileFromTemplate,
     profileSubtitle,
     saveProfile,
@@ -20,9 +28,8 @@
   } from '../lib/data.svelte';
   import { inTauri, loadVersionList } from '../lib/engine.svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { nav } from '../lib/nav.svelte';
+  import { goProfile, nav } from '../lib/nav.svelte';
   import { versions } from '../lib/versions.svelte';
-  import { maxGameMemoryGiB } from '../lib/system.svelte';
 
   type ValueEl = HTMLElement & { value: string };
   type CheckEl = HTMLElement & { checked: boolean };
@@ -39,11 +46,21 @@
   let ramOverride = $state(false);
   let ramGiB = $state(4);
   let error = $state('');
+  let showLook = $state(false);
 
   const LOADERS = Object.keys(LOADER_LABEL) as Loader[];
 
   onMount(() => {
     void loadVersionList(false);
+    // Opened from a profile's page: straight into its editor
+    if (nav.editProfile) {
+      const wanted = data.profiles.find((p) => p.id === nav.editProfile);
+      nav.editProfile = '';
+      if (wanted) {
+        openEditor(wanted, false);
+        return;
+      }
+    }
     // Opened from "Create a profile" elsewhere, or there's nothing to list yet
     if (nav.createProfile || data.profiles.length === 0) {
       nav.createProfile = false;
@@ -58,6 +75,7 @@
     error = '';
     ramOverride = p.ramMb != null;
     ramGiB = p.ramMb ? p.ramMb / 1024 : 4;
+    showLook = false;
     step = 'edit';
   }
 
@@ -97,13 +115,25 @@
     step = 'list';
   }
 
-  function remove() {
+  async function remove() {
     if (!draft) return;
     if (!confirmDelete) {
       confirmDelete = true;
       return;
     }
-    deleteProfile(draft.id);
+    const id = draft.id;
+    if (inTauri) {
+      try {
+        const freed = await invoke<number>('delete_profile_files', { id });
+        if (freed > 0) showToast(`Deleted the profile and freed ${formatBytes(freed)}`);
+      } catch (err) {
+        // The game may be running; keep the profile so nothing is orphaned
+        showToast(String(err), 4500);
+        confirmDelete = false;
+        return;
+      }
+    }
+    deleteProfile(id);
     draft = null;
     step = data.profiles.length ? 'list' : 'choose';
   }
@@ -246,22 +276,45 @@
         </div>
       {/if}
 
-      <m3e-form-field variant="outlined" class="field">
-        <label slot="label" for="p-name">Name</label>
-        <input id="p-name" bind:value={draft.name} maxlength="32" autocomplete="off" />
-      </m3e-form-field>
+      <div class="identity">
+        <button
+          type="button"
+          class="avatar"
+          aria-label="Change icon and colour"
+          aria-expanded={showLook}
+          onclick={() => (showLook = !showLook)}
+        >
+          <ProfileIcon profile={draft} size={56} />
+          <span class="badge"><Icon name="palette" size={14} /></span>
+        </button>
+        <m3e-form-field variant="outlined" class="field grow">
+          <label slot="label" for="p-name">Name</label>
+          <input id="p-name" bind:value={draft.name} maxlength="32" autocomplete="off" />
+        </m3e-form-field>
+      </div>
+      {#if showLook}
+        <IconPicker profile={draft} onchange={(patch) => draft && Object.assign(draft, patch)} />
+      {/if}
 
-      <div class="two" class:one={isXt(draft)}>
-        {#if !isXt(draft)}
-          <m3e-form-field variant="outlined" class="field">
-            <label slot="label" for="p-loader">Loader</label>
-            <m3e-select id="p-loader" use:selectValue={draft.loader} onchange={(e: Event) => setLoader(val(e) as Loader)}>
-              {#each LOADERS as l (l)}
-                <m3e-option value={l}>{LOADER_LABEL[l]}</m3e-option>
-              {/each}
-            </m3e-select>
-          </m3e-form-field>
-        {/if}
+      {#if !isXt(draft)}
+        <div class="loaders" role="radiogroup" aria-label="Loader">
+          {#each LOADERS as l (l)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={draft.loader === l}
+              class="lchip"
+              class:on={draft.loader === l}
+              onclick={() => setLoader(l)}
+            >
+              <LoaderLogo loader={l} size={24} />
+              <span>{LOADER_LABEL[l]}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="two one">
 
         {#key mcKey}
         <m3e-form-field variant="outlined" class="field">
@@ -332,12 +385,7 @@
         <m3e-switch checked={ramOverride} onchange={(e: Event) => (ramOverride = chk(e))}></m3e-switch>
       </label>
       {#if ramOverride}
-        <div class="mem">
-          <m3e-slider min="1" max={maxGameMemoryGiB()} step="0.5" labelled class="slider" aria-label="Memory in GiB">
-            <m3e-slider-thumb value={ramGiB} oninput={(e: Event) => (ramGiB = Number(val(e)))}></m3e-slider-thumb>
-          </m3e-slider>
-          <span class="muted amount">{ramGiB} GiB</span>
-        </div>
+        <RamSlider value={ramGiB} onchange={(v) => (ramGiB = v)} />
       {/if}
 
       <m3e-form-field variant="outlined" class="field">
@@ -349,7 +397,7 @@
 
       <div class="actions">
         {#if !isNew}
-          <m3e-button variant="text" onclick={remove}>{confirmDelete ? 'Confirm delete' : 'Delete'}</m3e-button>
+          <m3e-button variant={confirmDelete ? 'filled' : 'text'} onclick={remove}>{confirmDelete ? 'Delete profile and all its files?' : 'Delete'}</m3e-button>
         {/if}
         <span class="grow"></span>
         <m3e-button variant="text" onclick={back}>Cancel</m3e-button>
@@ -357,14 +405,23 @@
       </div>
     </form>
   {:else}
-    <ul class="list">
+    <ul class="list" use:sortable={{ onMove: moveProfile }}>
       {#each data.profiles as p (p.id)}
         <li class:active={p.id === data.profileId}>
+          <button
+            type="button"
+            class="grip"
+            data-handle
+            aria-label="Reorder {p.name}. Drag it, or hold Alt and press the up or down arrow."
+          >
+            <Icon name="drag" size={20} />
+          </button>
           <button class="row" onclick={() => (data.profileId = p.id)}>
-            <span class="chip-icon" class:xt={isXt(p)}><Icon name="rocket" size={20} /></span>
+            <ProfileIcon profile={p} size={40} />
             <span class="text">
               <span class="title">{p.name}</span>
               <span class="sub muted">{profileSubtitle(p)}{p.playMs ? ` · played ${formatPlaytime(p.playMs)}` : ''}</span>
+              <span class="sub muted when">{lastPlayedText(p.lastPlayed)}</span>
             </span>
             {#if p.kind === 'xt'}
               <span class="tag">Optimized</span>
@@ -373,6 +430,15 @@
             {/if}
             {#if p.id === data.profileId}<Icon name="check" size={20} />{/if}
           </button>
+          <m3e-icon-button
+            aria-label="Open the page for {p.name}"
+            onclick={() => {
+              data.profileId = p.id;
+              goProfile();
+            }}
+          >
+            <Icon name="tune" size={20} />
+          </m3e-icon-button>
           <m3e-icon-button aria-label="Duplicate {p.name}" onclick={() => copy(p.id)}>
             <Icon name="copy" size={20} />
           </m3e-icon-button>
@@ -485,6 +551,45 @@
   li.active {
     background: color-mix(in srgb, var(--md-sys-color-primary-container, #8f2410) 70%, transparent);
   }
+  li {
+    position: relative;
+    transition: box-shadow 160ms;
+  }
+  li:global(.dragging) {
+    z-index: 3;
+    box-shadow: 0 14px 36px rgb(0 0 0 / 0.45);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-highest, #383434) 100%, transparent);
+  }
+  .grip {
+    all: unset;
+    box-sizing: border-box;
+    width: 28px;
+    align-self: stretch;
+    display: grid;
+    place-items: center;
+    flex: none;
+    cursor: grab;
+    touch-action: none;
+    border-radius: 20px 0 0 20px;
+    color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+    opacity: 0.55;
+    transition: opacity 120ms;
+  }
+  li:hover .grip,
+  .grip:focus-visible {
+    opacity: 1;
+  }
+  .grip:active {
+    cursor: grabbing;
+  }
+  .grip:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary, #c23a24);
+    outline-offset: -2px;
+  }
+  .when {
+    font-size: 12px;
+    opacity: 0.85;
+  }
   .row {
     all: unset;
     box-sizing: border-box;
@@ -493,26 +598,12 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 8px 10px 10px;
+    padding: 10px 8px 10px 2px;
     cursor: pointer;
   }
   .row:focus-visible {
     outline: 2px solid var(--md-sys-color-primary, #c23a24);
     border-radius: 20px;
-  }
-  .chip-icon {
-    width: 40px;
-    height: 40px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    border-radius: 14px;
-    background: var(--md-sys-color-secondary-container, #5d3f3a);
-    color: var(--md-sys-color-on-secondary-container, #ffdad4);
-  }
-  .chip-icon.xt {
-    background: var(--md-sys-color-primary-container, #8f2410);
-    color: var(--md-sys-color-on-primary-container, #ffdad4);
   }
   .text {
     flex: 1;
@@ -553,6 +644,45 @@
     grid-template-columns: 1fr 1fr;
     gap: 12px;
   }
+  .loaders {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+  .lchip {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 4px 10px;
+    border-radius: 18px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-highest, #383434) 50%, transparent);
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+    transition:
+      background 140ms,
+      color 140ms,
+      outline-color 140ms,
+      transform 140ms;
+  }
+  .lchip:hover {
+    background: var(--md-sys-color-surface-container-highest, #383434);
+    transform: translateY(-1px);
+  }
+  .lchip.on {
+    color: var(--md-sys-color-on-primary-container, #ffdad4);
+    background: color-mix(in srgb, var(--md-sys-color-primary-container, #8f2410) 70%, transparent);
+    outline-color: var(--md-sys-color-primary, #c23a24);
+  }
+  .lchip:focus-visible {
+    outline-color: var(--md-sys-color-primary, #c23a24);
+  }
   .two.one {
     grid-template-columns: 1fr;
   }
@@ -567,18 +697,42 @@
     font-weight: 500;
     padding: 2px 4px;
   }
-  .mem {
+  .identity {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
   }
-  .slider {
+  .identity .grow {
     flex: 1;
+    min-width: 0;
   }
-  .amount {
-    min-width: 54px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  .avatar {
+    all: unset;
+    position: relative;
+    flex: none;
+    cursor: pointer;
+    border-radius: 18px;
+    transition: transform 140ms;
+  }
+  .avatar:hover {
+    transform: scale(1.04);
+  }
+  .avatar:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary, #c23a24);
+    outline-offset: 3px;
+  }
+  .badge {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--md-sys-color-primary, #c23a24);
+    color: var(--md-sys-color-on-primary, #fff);
+    box-shadow: 0 0 0 3px var(--md-sys-color-surface-container, #1e1b1b);
   }
   .actions {
     display: flex;

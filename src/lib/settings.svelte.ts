@@ -28,6 +28,10 @@ export interface Settings {
   showOld: boolean;
   /** Azure application (client) id for Microsoft sign-in */
   msClientId: string;
+  /** Last launcher version whose "What's new" was shown */
+  seenVersion: string;
+  /** The first-run low-memory suggestion has been shown */
+  lowEndChecked: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -52,6 +56,8 @@ export const DEFAULTS: Settings = {
   showSnapshots: false,
   showOld: false,
   msClientId: '',
+  seenVersion: '',
+  lowEndChecked: false,
 };
 
 const KEY = 'xt.settings.v1';

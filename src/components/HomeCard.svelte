@@ -1,7 +1,9 @@
 <script lang="ts">
   import Icon from '../lib/Icon.svelte';
   import Head from '../lib/Head.svelte';
-  import { go, goCreateProfile } from '../lib/nav.svelte';
+  import ProfileIcon from '../lib/ProfileIcon.svelte';
+  import { lastPlayedText } from '../lib/time';
+  import { go, goCreateProfile, goProfile } from '../lib/nav.svelte';
   import { showToast } from '../lib/toast.svelte';
   import { checkForUpdates } from '../lib/updater';
   import { engine, openFolder, play } from '../lib/engine.svelte';
@@ -49,10 +51,11 @@
   {#if profile}
     <button class="picker" aria-label="Choose profile">
       <m3e-menu-trigger for="profile-menu"></m3e-menu-trigger>
-      <span class="chip-icon" class:xt={isXt(profile)}><Icon name="rocket" size={20} /></span>
+      <ProfileIcon {profile} size={40} />
       <span class="text">
         <span class="title">{profile.name}</span>
         <span class="sub muted">{profileSubtitle(profile)}</span>
+        <span class="sub when muted">{lastPlayedText(profile.lastPlayed)}</span>
       </span>
       <Icon name="down" size={22} />
     </button>
@@ -87,12 +90,18 @@
     </m3e-icon-button>
     <m3e-tooltip for="b-logs">Game logs</m3e-tooltip>
 
+    <m3e-icon-button id="b-profile" variant="tonal" aria-label="Profile page" disabled={!profile} onclick={() => goProfile()}>
+      <Icon name="tune" />
+    </m3e-icon-button>
+    <m3e-tooltip for="b-profile">Profile page: mods, screenshots, repair</m3e-tooltip>
+
     <m3e-icon-button id="b-folder" variant="tonal" aria-label="Folders">
       <m3e-menu-trigger for="folder-menu"></m3e-menu-trigger>
       <Icon name="folder" />
     </m3e-icon-button>
     <m3e-menu id="folder-menu">
       <m3e-menu-item onclick={() => openFolder('mods')}>Open mods folder</m3e-menu-item>
+      <m3e-menu-item onclick={() => openFolder('screenshots')}>Open screenshots folder</m3e-menu-item>
       <m3e-menu-item onclick={() => openFolder('game')}>Open game folder</m3e-menu-item>
     </m3e-menu>
 
@@ -162,6 +171,10 @@
   .sub {
     font-size: 12.5px;
   }
+  .when {
+    font-size: 12px;
+    opacity: 0.8;
+  }
 
   .chip-icon {
     width: 40px;
@@ -187,7 +200,7 @@
 
   .actions {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     justify-items: center;
     padding-top: 2px;
   }

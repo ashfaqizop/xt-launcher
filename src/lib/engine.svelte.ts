@@ -43,6 +43,8 @@ export interface LastSession {
   crash: CrashInfo | null;
   error: string;
   cancelled: boolean;
+  /** A repair run finished (nothing was launched) */
+  repaired: boolean;
   at: number;
 }
 
@@ -66,6 +68,8 @@ export const engine = $state({
   startedAt: 0,
   runningSince: 0,
   cancelling: false,
+  /** The current run is a repair (verify files, don't start the game) */
+  repairing: false,
   /** Whether the launch ribbon is currently on screen (set by the ribbon) */
   ribbonOpen: false,
   /** Summary of the session that just ended (shown in the ribbon) */
@@ -90,7 +94,7 @@ function flushLogs() {
 }
 
 interface StatePayload {
-  state: 'installing' | 'running' | 'exited' | 'error' | 'cancelled';
+  state: 'installing' | 'running' | 'exited' | 'error' | 'cancelled' | 'repaired';
   message: string | null;
   code: number | null;
   crash: CrashInfo | null;
@@ -120,6 +124,7 @@ function finishSession(partial: Partial<LastSession>) {
     crash: null,
     error: '',
     cancelled: false,
+    repaired: false,
     at: Date.now(),
     ...partial,
   };
@@ -127,6 +132,7 @@ function finishSession(partial: Partial<LastSession>) {
   engine.phase = 'idle';
   engine.runningSince = 0;
   engine.cancelling = false;
+  engine.repairing = false;
 }
 
 async function onState(p: StatePayload) {
@@ -168,6 +174,10 @@ async function onState(p: StatePayload) {
     case 'cancelled':
       finishSession({ cancelled: true });
       break;
+    case 'repaired':
+      finishSession({ repaired: true });
+      void refreshLogs();
+      break;
   }
 }
 
@@ -205,7 +215,7 @@ function onProgress(p: ProgressPayload) {
   if (engine.cancelling) engine.label = 'Cancelling';
   else if (p.stage === 'loader') engine.label = p.label;
   else if (p.fetched > 0) engine.label = 'Downloading ' + what;
-  else engine.label = 'Checking ' + what;
+  else engine.label = (engine.repairing ? 'Verifying ' : 'Checking ') + what;
 
   // Download speed, smoothed over samples at least 400 ms apart
   const now = performance.now();
@@ -247,7 +257,12 @@ export async function initEngine() {
   }
 }
 
-export async function play() {
+export const play = () => start(false);
+
+/** Re-check every file of the current profile and download anything broken. */
+export const repairProfile = () => start(true);
+
+async function start(repair: boolean) {
   const account = currentAccount();
   const profile = currentProfile();
   if (!profile) {
@@ -255,7 +270,7 @@ export async function play() {
     goCreateProfile();
     return;
   }
-  if (!account) {
+  if (!account && !repair) {
     showToast('Add an account to play');
     go('accounts');
     return;
@@ -280,6 +295,7 @@ export async function play() {
   engine.label = 'Preparing';
   engine.startedAt = Date.now();
   engine.cancelling = false;
+  engine.repairing = repair;
 
   try {
     await invoke('launch_game', {
@@ -288,7 +304,8 @@ export async function play() {
         loader: profile.loader,
         loaderVersion: profile.loaderVersion || null,
         mc: profile.mc,
-        account: { name: account.name, kind: account.type, id: account.id },
+        account: { name: account?.name ?? 'Player', kind: account?.type ?? 'offline', id: account?.id },
+        repair,
         afterLaunch: settings.afterLaunch,
         msClientId: settings.msClientId || null,
         ramMb: profile.ramMb ?? (settings.ramAuto ? autoMemoryMb() : settings.ramMb),
@@ -327,7 +344,7 @@ export async function stop() {
   }
 }
 
-export async function openFolder(kind: 'root' | 'game' | 'mods') {
+export async function openFolder(kind: 'root' | 'game' | 'mods' | 'screenshots') {
   if (!inTauri) {
     showToast('Folders open in the desktop app');
     return;

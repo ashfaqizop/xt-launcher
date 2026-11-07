@@ -6,6 +6,8 @@
   import InstancesPanel from './components/InstancesPanel.svelte';
   import LogsPanel from './components/LogsPanel.svelte';
   import LaunchRibbon from './components/LaunchRibbon.svelte';
+  import ProfilePanel from './components/ProfilePanel.svelte';
+  import Welcome from './components/Welcome.svelte';
   import { engine, initEngine } from './lib/engine.svelte';
   import { nav } from './lib/nav.svelte';
   import { settings } from './lib/settings.svelte';
@@ -43,12 +45,15 @@
         <AccountsPanel />
       {:else if nav.view === 'instances'}
         <InstancesPanel />
+      {:else if nav.view === 'profile'}
+        <ProfilePanel />
       {:else if nav.view === 'logs'}
         <LogsPanel />
       {/if}
     </main>
 
     <LaunchRibbon />
+    <Welcome />
 
     {#if toast.text}
       {#key toast.id}

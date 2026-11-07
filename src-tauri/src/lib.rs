@@ -39,6 +39,22 @@ pub fn run() {
             engine::auth::forget_account,
             engine::system::system_info,
             engine::catalog::loader_catalog,
+            engine::system::memory_status,
+            engine::screenshots::list_screenshots,
+            engine::screenshots::read_screenshot,
+            engine::screenshots::open_screenshot,
+            engine::screenshots::delete_screenshot,
+            engine::storage::storage_report,
+            engine::storage::storage_clean,
+            engine::storage::storage_delete_instance,
+            engine::storage::delete_profile_files,
+            engine::modman::list_mods,
+            engine::modman::set_mod_enabled,
+            engine::modman::remove_mod,
+            engine::modman::add_mod_files,
+            engine::modman::modrinth_search,
+            engine::modman::modrinth_identify,
+            engine::modman::modrinth_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running XT Launcher");

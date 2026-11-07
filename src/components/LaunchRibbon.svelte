@@ -66,7 +66,7 @@
           <div class="title">
             {engine.label}{determinate ? ` · ${Math.floor(engine.percent)}%` : ''}
           </div>
-          <div class="sub muted">{engine.profileName}{detail ? `  ·  ${detail}` : ''}</div>
+          <div class="sub muted">{engine.repairing ? "Repairing " : ""}{engine.profileName}{detail ? `  ·  ${detail}` : ''}</div>
         </div>
       </div>
       <div class="actions">
@@ -122,6 +122,9 @@
           {:else if last.error}
             <div class="title">Couldn't start {last.profileName}</div>
             <div class="sub clamp">{last.error}</div>
+          {:else if last.repaired}
+            <div class="title">Profile repaired</div>
+            <div class="sub muted">{last.profileName}  ·  every file was checked</div>
           {:else if last.cancelled}
             <div class="title">Launch cancelled</div>
             <div class="sub muted">Downloaded files are kept for next time</div>

@@ -13,3 +13,32 @@ export function selectValue(node: HTMLElement & { value?: unknown }, value: stri
   apply(value);
   return { update: apply };
 }
+
+/** Run `load` once, when the element first scrolls (nearly) into view. */
+export function lazy(node: HTMLElement, load: () => void) {
+  if (typeof IntersectionObserver === 'undefined') {
+    load();
+    return {};
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        observer.disconnect();
+        load();
+      }
+    },
+    { rootMargin: '240px' },
+  );
+  observer.observe(node);
+  return { destroy: () => observer.disconnect() };
+}
+
+/**
+ * Move an element to the themed root so `position: fixed` covers the whole window.
+ * (Panels use backdrop-filter, which would otherwise trap fixed children inside them.)
+ */
+export function portal(node: HTMLElement) {
+  const root = document.querySelector('m3e-theme') ?? document.body;
+  root.appendChild(node);
+  return { destroy: () => node.remove() };
+}

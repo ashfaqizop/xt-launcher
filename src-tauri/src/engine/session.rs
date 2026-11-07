@@ -5,7 +5,7 @@ use super::crash::{self, CrashInfo};
 use super::auth;
 use super::launch::{self, Options};
 use super::paths::Paths;
-use super::{install, java, loaders, mods};
+use super::{http, install, java, loaders, mods};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -31,6 +31,13 @@ pub struct Session {
     hidden: AtomicBool,
     pid: Mutex<Option<u32>>,
     logs: Mutex<VecDeque<LogLine>>,
+}
+
+impl Session {
+    /// A game is starting or running
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::SeqCst)
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -120,6 +127,10 @@ pub struct LaunchRequest {
     /// keep | hide | close: what the launcher window does while the game runs
     #[serde(default)]
     pub after_launch: Option<String>,
+    /// Re-check every file against its checksum and re-download anything broken, then stop
+    /// (no game start): "Repair profile"
+    #[serde(default)]
+    pub repair: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +240,7 @@ async fn sync_xt_mods(app: &AppHandle, paths: &Paths, req: &LaunchRequest, tier:
 
 async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     install::reset_cancel();
+    http::set_verify_all(req.repair);
     app.state::<Session>().logs.lock().unwrap().clear();
     let paths = Paths::new(app)?;
     let game_dir = paths.instance(&req.profile_id);
@@ -259,6 +271,12 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         }
     };
 
+    if req.repair {
+        push_log(app, "Repairing: checking every file against its checksum");
+        // Make the XT mods get re-resolved and verified too
+        mods::force_recheck(&game_dir.join("mods")).await;
+    }
+
     if let Some(tier) = req.xt_tier.as_deref() {
         sync_xt_mods(app, &paths, &req, tier, &mc_id).await;
     }
@@ -283,8 +301,25 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         None => java::ensure(app, &paths, &component).await?,
     };
 
+    // Remember what this profile runs on, so Storage can tell what is still in use
+    let marker = serde_json::json!({
+        "versions": [version_id.clone(), root_id.clone()],
+        "javaComponent": component.clone(),
+    });
+    let _ = tokio::fs::write(game_dir.join(super::storage::MARKER), marker.to_string()).await;
+
     install::check_cancel()?;
+    if req.repair {
+        // Natives are unpacked again from the (now verified) libraries
+        let _ = tokio::fs::remove_dir_all(paths.natives(&version.id)).await;
+    }
     let natives = launch::extract_natives(&paths, &version).await?;
+
+    if req.repair {
+        push_log(app, "Repair finished: all files verified");
+        emit_state(app, "repaired", None, None, None);
+        return Ok(());
+    }
 
     emit_state(app, "installing", Some("Signing in".to_string()), None, None);
     let resolved = auth::resolve_for_launch(
@@ -427,6 +462,7 @@ pub async fn launch_game(app: AppHandle, req: LaunchRequest) -> Result<(), Strin
                 emit_state(&app, "error", Some(format!("{e:#}")), None, None);
             }
         }
+        http::set_verify_all(false);
         app.state::<Session>().busy.store(false, Ordering::SeqCst);
     });
     Ok(())
@@ -539,6 +575,7 @@ pub fn open_dir(app: AppHandle, kind: String, profile_id: Option<String>) -> Res
         "root" => paths.root.clone(),
         "game" => paths.instance(&profile),
         "mods" => paths.instance(&profile).join("mods"),
+        "screenshots" => paths.instance(&profile).join("screenshots"),
         other => return Err(format!("unknown folder '{other}'")),
     };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

@@ -3,9 +3,38 @@ use futures_util::StreamExt;
 use serde::de::DeserializeOwned;
 use sha1::{Digest, Sha1};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::{fs, io::AsyncWriteExt};
+
+/// While true (a "Repair profile" run), files that already exist are hashed and re-downloaded
+/// when they don't match, instead of being trusted because the size looks right.
+static VERIFY_ALL: AtomicBool = AtomicBool::new(false);
+
+pub fn set_verify_all(on: bool) {
+    VERIFY_ALL.store(on, Ordering::SeqCst);
+}
+
+pub fn verify_all() -> bool {
+    VERIFY_ALL.load(Ordering::SeqCst)
+}
+
+/// SHA-1 of a file, read in chunks. None if it can't be read.
+pub async fn sha1_of(path: &Path) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let mut file = fs::File::open(path).await.ok()?;
+    let mut hasher = Sha1::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).await.ok()?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Some(hex::encode(hasher.finalize()))
+}
 
 pub fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
@@ -22,6 +51,20 @@ pub fn client() -> &'static reqwest::Client {
 pub async fn get_json<T: DeserializeOwned>(url: &str) -> Result<T> {
     let resp = client()
         .get(url)
+        .send()
+        .await
+        .with_context(|| format!("request to {url}"))?
+        .error_for_status()
+        .with_context(|| format!("bad status from {url}"))?;
+    resp.json::<T>()
+        .await
+        .with_context(|| format!("decoding {url}"))
+}
+
+pub async fn post_json<B: serde::Serialize, T: DeserializeOwned>(url: &str, body: &B) -> Result<T> {
+    let resp = client()
+        .post(url)
+        .json(body)
         .send()
         .await
         .with_context(|| format!("request to {url}"))?
@@ -65,7 +108,16 @@ pub async fn download(
     size: Option<u64>,
 ) -> Result<bool> {
     if is_current(dest, size).await {
-        return Ok(false);
+        let trusted = match sha1 {
+            Some(expected) if verify_all() => sha1_of(dest)
+                .await
+                .map(|got| got.eq_ignore_ascii_case(expected))
+                .unwrap_or(false),
+            _ => true,
+        };
+        if trusted {
+            return Ok(false);
+        }
     }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).await?;

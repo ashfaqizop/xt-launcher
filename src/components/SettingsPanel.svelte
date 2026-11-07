@@ -3,6 +3,8 @@
   import { onMount } from 'svelte';
   import Icon from '../lib/Icon.svelte';
   import Panel from './Panel.svelte';
+  import RamSlider from './RamSlider.svelte';
+  import StorageTab from './StorageTab.svelte';
   import { nav } from '../lib/nav.svelte';
   import { resetSettings, settings } from '../lib/settings.svelte';
   import flame from '../assets/flame.png';
@@ -21,6 +23,7 @@
   const num = (e: Event) => Number((e.currentTarget as ValueEl).value);
 
   const inTauri = '__TAURI_INTERNALS__' in window;
+  const JAVA_EXAMPLE = String.raw`C:\Program Files\Java\jdk-21\bin\java.exe`;
 
   let version = $state('0.1.0');
   let fileInput: HTMLInputElement;
@@ -97,6 +100,7 @@
   <m3e-tabs>
     <m3e-tab for="tab-mc" selected={nav.tab === 'minecraft'} onclick={() => (nav.tab = 'minecraft')}>Minecraft</m3e-tab>
     <m3e-tab for="tab-launcher" selected={nav.tab === 'launcher'} onclick={() => (nav.tab = 'launcher')}>Launcher</m3e-tab>
+    <m3e-tab for="tab-storage" selected={nav.tab === 'storage'} onclick={() => (nav.tab = 'storage')}>Storage</m3e-tab>
     <m3e-tab for="tab-about" selected={nav.tab === 'about'} onclick={() => (nav.tab = 'about')}>About</m3e-tab>
 
     <!-- ================= Minecraft ================= -->
@@ -143,7 +147,7 @@
           <div class="row">
             <span class="label">Java path</span>
             <m3e-form-field variant="outlined" class="ctl">
-              <input bind:value={settings.javaPath} placeholder="C:Program FilesJavajdk-21injava.exe" spellcheck="false" aria-label="Java path" />
+              <input bind:value={settings.javaPath} placeholder={JAVA_EXAMPLE} spellcheck="false" aria-label="Java path" />
             </m3e-form-field>
           </div>
         {:else if javaChoice !== 'auto'}
@@ -173,10 +177,7 @@
             </span>
           {:else}
             <div class="ctl mem">
-              <m3e-slider min="1" max={maxGameMemoryGiB()} step="0.5" labelled class="slider" aria-label="Memory in GiB">
-                <m3e-slider-thumb value={Math.min(ramGiB, maxGameMemoryGiB())} oninput={(e: Event) => (settings.ramMb = Math.round(num(e) * 1024))}></m3e-slider-thumb>
-              </m3e-slider>
-              <span class="amount">{gib(settings.ramMb)} GiB</span>
+              <RamSlider value={ramGiB} onchange={(v) => (settings.ramMb = Math.round(v * 1024))} />
             </div>
           {/if}
         </div>
@@ -303,6 +304,11 @@
       </div>
     </m3e-tab-panel>
 
+    <!-- ================= Storage ================= -->
+    <m3e-tab-panel id="tab-storage">
+      {#if nav.tab === 'storage'}<StorageTab />{/if}
+    </m3e-tab-panel>
+
     <!-- ================= About ================= -->
     <m3e-tab-panel id="tab-about">
       <div class="tab about">
@@ -415,11 +421,6 @@
     font-size: 12.5px;
     line-height: 1.45;
     word-break: break-all;
-  }
-  .amount {
-    min-width: 54px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
   }
   .seg {
     justify-self: start;

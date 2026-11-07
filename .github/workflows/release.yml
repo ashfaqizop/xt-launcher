@@ -32,6 +32,19 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Release notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          body="$(awk -v v="$version" '/^## /{ if (found) exit; found = ($2 == v); next } found' CHANGELOG.md)"
+          if [ -z "$body" ]; then body="See the assets below to download and install XT Launcher."; fi
+          {
+            echo 'body<<NOTES_EOF'
+            echo "$body"
+            echo 'NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,7 +53,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: XT Launcher ${{ github.ref_name }}
-          releaseBody: See the assets below to download and install XT Launcher.
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true   # drafts stay private until you press Publish on GitHub
           prerelease: false
           uploadUpdaterJson: true

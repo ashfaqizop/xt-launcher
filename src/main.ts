@@ -4,6 +4,7 @@ import '@fontsource-variable/bricolage-grotesque/wght.css';
 import '@m3e/web/theme';
 import '@m3e/web/avatar';
 import '@m3e/web/button';
+import '@m3e/web/dialog';
 import '@m3e/web/divider';
 import '@m3e/web/form-field';
 import '@m3e/web/icon-button';

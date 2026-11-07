@@ -173,7 +173,7 @@ fn pinned_plan(kind: &str, mc: &str, version: &str) -> Result<Plan> {
 }
 
 async fn run_plan(app: &AppHandle, paths: &Paths, mc: &str, plan: Plan) -> Result<String> {
-    if tokio::fs::metadata(paths.version_json(&plan.id)).await.is_ok() {
+    if !http::verify_all() && tokio::fs::metadata(paths.version_json(&plan.id)).await.is_ok() {
         return Ok(plan.id);
     }
     downloads::emit_progress(app, "loader", 0, 0, &format!("Installing {}", plan.label));
@@ -189,6 +189,9 @@ async fn run_plan(app: &AppHandle, paths: &Paths, mc: &str, plan: Plan) -> Resul
 
     let dir = paths.cache().join("installers");
     let jar = dir.join(format!("{}-installer.jar", plan.id));
+    if http::verify_all() {
+        let _ = tokio::fs::remove_file(&jar).await;
+    }
     http::download(&plan.url, &jar, None, None).await?;
 
     // The installers expect a launcher_profiles.json next to libraries/ and versions/

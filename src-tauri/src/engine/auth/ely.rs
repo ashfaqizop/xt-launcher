@@ -142,20 +142,40 @@ fn parse_callback(target: &str, expected_state: &str) -> Option<Result<String>> 
     Some(code.ok_or_else(|| anyhow!("Ely.by returned no authorization code")))
 }
 
-async fn respond(stream: &mut TcpStream, ok: bool) {
-    let message = if ok {
-        "Ely.by is connected. You can close this tab and go back to XT Launcher."
+/// The page the browser lands on after Ely.by redirects back (shown once, then the
+/// loopback server stops). Self-contained: no network requests, light and dark aware.
+fn callback_page(ok: bool) -> String {
+    const TEMPLATE: &str = include_str!("callback.html");
+    const LOGO: &[u8] = include_bytes!("../../../../src/assets/flame.png");
+
+    let (heading, message, color, icon) = if ok {
+        (
+            "You're connected",
+            "Ely.by is linked to XT Launcher. You can close this tab and head back to the launcher.",
+            "#45b36b",
+            "M5 12.5l4.5 4.5L19 7",
+        )
     } else {
-        "Sign-in failed. Go back to XT Launcher and try again."
+        (
+            "Sign-in didn't finish",
+            "Nothing was changed. Go back to XT Launcher and try signing in again.",
+            "#e5594b",
+            "M6 6l12 12M18 6L6 18",
+        )
     };
-    let body = format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><title>XT Launcher</title></head>\
-         <body style=\"margin:0;display:grid;place-items:center;height:100vh;background:#100f0f;\
-         color:#ece0dd;font-family:system-ui,sans-serif\"><div style=\"text-align:center\">\
-         <h1 style=\"color:#c23a24;margin:0 0 8px\">XT Launcher</h1><p>{message}</p></div></body></html>"
-    );
+    let logo = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(LOGO));
+    TEMPLATE
+        .replace("{{STATE_COLOR}}", color)
+        .replace("{{HEADING}}", heading)
+        .replace("{{MESSAGE}}", message)
+        .replace("{{ICON_PATH}}", icon)
+        .replace("{{LOGO}}", &logo)
+}
+
+async fn respond(stream: &mut TcpStream, ok: bool) {
+    let body = callback_page(ok);
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     );
     let _ = stream.write_all(response.as_bytes()).await;

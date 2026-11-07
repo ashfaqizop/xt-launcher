@@ -20,7 +20,7 @@ use tauri::AppHandle;
 const MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/ashfaqizop/xt-launcher/main/manifest/xt-mods.json";
 const EMBEDDED_MANIFEST: &str = include_str!("../../../manifest/xt-mods.json");
-const MODRINTH: &str = "https://api.modrinth.com/v2";
+pub(super) const MODRINTH: &str = "https://api.modrinth.com/v2";
 /// Don't re-query Modrinth more often than this for the same profile and Minecraft version.
 const RECHECK_SECS: u64 = 6 * 60 * 60;
 const STATE_FILE: &str = ".xt-managed.json";
@@ -86,37 +86,41 @@ fn tier_slugs(manifest: &Manifest, tier: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Clone)]
-struct MrVersion {
-    project_id: String,
-    version_type: String,
+pub(super) struct MrVersion {
     #[serde(default)]
-    files: Vec<MrFile>,
+    pub id: String,
+    pub project_id: String,
     #[serde(default)]
-    dependencies: Vec<MrDependency>,
+    pub version_number: String,
+    pub version_type: String,
+    #[serde(default)]
+    pub files: Vec<MrFile>,
+    #[serde(default)]
+    pub dependencies: Vec<MrDependency>,
 }
 
 #[derive(Deserialize, Clone)]
-struct MrFile {
-    url: String,
-    filename: String,
+pub(super) struct MrFile {
+    pub url: String,
+    pub filename: String,
     #[serde(default)]
-    primary: bool,
+    pub primary: bool,
     #[serde(default)]
-    size: Option<u64>,
-    hashes: MrHashes,
+    pub size: Option<u64>,
+    pub hashes: MrHashes,
 }
 
 #[derive(Deserialize, Clone)]
-struct MrHashes {
+pub(super) struct MrHashes {
     #[serde(default)]
-    sha1: Option<String>,
+    pub sha1: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
-struct MrDependency {
+pub(super) struct MrDependency {
     #[serde(default)]
-    project_id: Option<String>,
-    dependency_type: String,
+    pub project_id: Option<String>,
+    pub dependency_type: String,
 }
 
 #[derive(Deserialize)]
@@ -125,7 +129,7 @@ struct MrProject {
 }
 
 /// A friendly name for messages; falls back to the slug or id.
-async fn project_title(project: &str) -> String {
+pub(super) async fn project_title(project: &str) -> String {
     match http::get_json::<MrProject>(&format!("{MODRINTH}/project/{project}")).await {
         Ok(p) => p.title,
         Err(_) => project.to_string(),
@@ -133,8 +137,8 @@ async fn project_title(project: &str) -> String {
 }
 
 /// Newest compatible build of a project (a slug or an id), preferring releases.
-async fn best_version(project: &str, mc: &str, loader: &str) -> Result<Option<MrVersion>> {
-    let loaders = format!("[\"{loader}\"]");
+pub(super) async fn best_version(project: &str, mc: &str, loader: &[&str]) -> Result<Option<MrVersion>> {
+    let loaders = serde_json::to_string(loader)?;
     let game_versions = format!("[\"{mc}\"]");
     let url = reqwest::Url::parse_with_params(
         &format!("{MODRINTH}/project/{project}/version"),
@@ -167,6 +171,30 @@ struct State {
     checked: u64,
     #[serde(default)]
     files: Vec<String>,
+}
+
+/// Files the XT tier installed in this profile's mods folder (jar names, enabled or not).
+pub fn managed_files(mods_dir: &Path) -> Vec<String> {
+    std::fs::read(mods_dir.join(STATE_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<State>(&bytes).ok())
+        .map(|s| s.files)
+        .unwrap_or_default()
+}
+
+/// Make the next sync re-resolve and re-verify every XT mod (used by "Repair profile").
+pub async fn force_recheck(mods_dir: &Path) {
+    let mut state = read_state(mods_dir).await;
+    if state.files.is_empty() {
+        return;
+    }
+    state.checked = 0;
+    write_state(mods_dir, &state).await;
+}
+
+/// The jar exists, either enabled or disabled by the user (`name.jar.disabled`).
+fn present(mods_dir: &Path, name: &str) -> bool {
+    mods_dir.join(name).exists() || mods_dir.join(format!("{name}.disabled")).exists()
 }
 
 fn now_secs() -> u64 {
@@ -221,7 +249,7 @@ pub async fn sync(
         && old.mc == mc
         && now_secs().saturating_sub(old.checked) < RECHECK_SECS
         && !old.files.is_empty()
-        && old.files.iter().all(|f| mods_dir.join(f).exists());
+        && old.files.iter().all(|f| present(&mods_dir, f));
     if fresh {
         return Ok(Report {
             count: old.files.len(),
@@ -248,7 +276,7 @@ pub async fn sync(
     while !queue.is_empty() {
         let batch: Vec<String> = std::mem::take(&mut queue);
         let results = futures_util::stream::iter(batch.into_iter().map(|project| async move {
-            let result = best_version(&project, mc, loader).await;
+            let result = best_version(&project, mc, &[loader]).await;
             (project, result)
         }))
         .buffer_unordered(6)
@@ -311,6 +339,10 @@ pub async fn sync(
             continue;
         };
         files.push(name.to_string());
+        // A mod the user switched off stays off (and in place)
+        if mods_dir.join(format!("{name}.disabled")).exists() {
+            continue;
+        }
         tasks.push(Task {
             url: file.url.clone(),
             dest: mods_dir.join(name),
@@ -323,6 +355,7 @@ pub async fn sync(
     // Remove builds we installed earlier that are no longer wanted
     for stale in old.files.iter().filter(|f| !files.contains(f)) {
         let _ = tokio::fs::remove_file(mods_dir.join(stale)).await;
+        let _ = tokio::fs::remove_file(mods_dir.join(format!("{stale}.disabled"))).await;
     }
 
     run_tasks(app, "mods", "Updating mods", tasks).await?;

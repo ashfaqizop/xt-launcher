@@ -4,9 +4,11 @@
   import Head from '../lib/Head.svelte';
   import SkinView from '../lib/SkinView.svelte';
   import Panel from './Panel.svelte';
+  import { sortable } from '../lib/sortable';
   import {
     ACCOUNT_LABEL,
     OFFLINE_NAME,
+    moveAccount,
     addOfflineAccount,
     data,
     removeAccount,
@@ -143,9 +145,17 @@
     <aside class="side">
       <div class="side-title muted">Your accounts</div>
       {#if data.accounts.length}
-        <ul class="list">
+        <ul class="list" use:sortable={{ onMove: moveAccount }}>
           {#each data.accounts as a (a.id)}
             <li>
+              <button
+                type="button"
+                class="grip"
+                data-handle
+                aria-label="Reorder {a.name}. Drag it, or hold Alt and press the up or down arrow."
+              >
+                <Icon name="drag" size={18} />
+              </button>
               <button
                 class="item"
                 class:sel={pane.kind === 'account' && pane.id === a.id}
@@ -175,7 +185,7 @@
         {#key selected.id}
           <div class="detail">
             <div class="hero">
-              <SkinView name={selected.name} unit={6} />
+              <SkinView name={selected.name} unit={6} stage />
               <div class="hero-text">
                 {#if renaming}
                   <form class="rename" onsubmit={saveRename}>
@@ -371,10 +381,50 @@
     overflow-y: auto;
     max-height: 300px;
   }
+  .list li {
+    position: relative;
+    display: flex;
+    align-items: center;
+    border-radius: 16px;
+    transition: box-shadow 160ms;
+  }
+  .list li:global(.dragging) {
+    z-index: 3;
+    box-shadow: 0 12px 30px rgb(0 0 0 / 0.45);
+    background: var(--md-sys-color-surface-container-high, #2b2727);
+  }
+  .grip {
+    all: unset;
+    box-sizing: border-box;
+    width: 22px;
+    align-self: stretch;
+    flex: none;
+    display: grid;
+    place-items: center;
+    cursor: grab;
+    touch-action: none;
+    border-radius: 16px 0 0 16px;
+    color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .list li:hover .grip,
+  .grip:focus-visible {
+    opacity: 0.9;
+  }
+  .grip:active {
+    cursor: grabbing;
+  }
+  .grip:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary, #c23a24);
+    outline-offset: -2px;
+    opacity: 1;
+  }
   .item {
     all: unset;
     box-sizing: border-box;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 10px;

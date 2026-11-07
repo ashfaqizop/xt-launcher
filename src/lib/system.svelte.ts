@@ -58,6 +58,14 @@ export function autoMemoryMb(): number {
   return 8192;
 }
 
+/** A lower memory limit for small PCs (8 GB or less), so Windows keeps room to breathe. */
+export function lowEndMemoryMb(): number {
+  const gib = system.totalMemoryMb / 1024;
+  if (!gib || gib > 6.5) return 2560;
+  if (gib > 4.5) return 2048;
+  return 1536;
+}
+
 export const gib = (mb: number) => {
   const v = mb / 1024;
   return Number.isInteger(v) ? `${v}` : v.toFixed(1);

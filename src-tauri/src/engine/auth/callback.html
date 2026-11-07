@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XT Launcher</title>
+<style>
+  :root {
+    color-scheme: dark light;
+    --bg: #0f0e0e;
+    --card: rgba(34, 30, 29, 0.72);
+    --edge: rgba(255, 255, 255, 0.09);
+    --ink: #f3e8e4;
+    --muted: #b8a9a4;
+    --brand: #e0553b;
+    --state: {{STATE_COLOR}};
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fbf3f0;
+      --card: rgba(255, 255, 255, 0.82);
+      --edge: rgba(0, 0, 0, 0.08);
+      --ink: #261a17;
+      --muted: #6f5f5a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(700px 420px at 50% -8%, color-mix(in srgb, var(--state) 30%, transparent), transparent 70%),
+      radial-gradient(520px 320px at 88% 108%, color-mix(in srgb, var(--brand) 16%, transparent), transparent 70%),
+      var(--bg);
+  }
+  .card {
+    width: min(440px, 100%);
+    padding: 36px 32px 28px;
+    text-align: center;
+    border-radius: 32px;
+    background: var(--card);
+    border: 1px solid var(--edge);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+    animation: rise 520ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+  .link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 26px;
+  }
+  .node {
+    width: 68px;
+    height: 68px;
+    display: grid;
+    place-items: center;
+    border-radius: 22px;
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    border: 1px solid var(--edge);
+  }
+  .node img { width: 40px; height: 40px; }
+  .node.ely { font-weight: 800; font-size: 15px; letter-spacing: -0.02em; }
+  .node.ely b { color: var(--brand); }
+  .wire {
+    position: relative;
+    width: 84px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--ink) 35%, transparent) 0 6px, transparent 6px 12px);
+  }
+  .wire::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--state);
+    transform-origin: left;
+    animation: grow 700ms 350ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+  .badge {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 34px;
+    height: 34px;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--state);
+    color: #fff;
+    box-shadow: 0 0 0 5px var(--card);
+    animation: pop 420ms 900ms cubic-bezier(0.3, 1.6, 0.5, 1) both;
+  }
+  .badge svg { width: 18px; height: 18px; }
+  .badge path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 30;
+    stroke-dashoffset: 30;
+    animation: draw 380ms 1150ms ease-out forwards;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-size: 27px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+  }
+  p {
+    margin: 0 auto;
+    max-width: 330px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  button {
+    margin-top: 24px;
+    padding: 12px 26px;
+    border: 0;
+    border-radius: 999px;
+    font: inherit;
+    font-weight: 650;
+    color: #fff;
+    background: var(--brand);
+    cursor: pointer;
+    transition: transform 140ms, filter 140ms;
+  }
+  button:hover { transform: translateY(-1px); filter: brightness(1.08); }
+  button:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 50%, transparent); outline-offset: 3px; }
+  .foot {
+    margin-top: 22px;
+    font-size: 12px;
+    color: var(--muted);
+    opacity: 0.75;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
+  @keyframes grow { from { transform: scaleX(0); } }
+  @keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); } }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::after { animation-duration: 1ms !important; animation-delay: 0s !important; }
+  }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="link" aria-hidden="true">
+      <div class="node"><img src="{{LOGO}}" alt=""></div>
+      <div class="wire">
+        <span class="badge"><svg viewBox="0 0 24 24"><path d="{{ICON_PATH}}"/></svg></span>
+      </div>
+      <div class="node ely"><span>ely<b>.by</b></span></div>
+    </div>
+    <h1>{{HEADING}}</h1>
+    <p>{{MESSAGE}}</p>
+    <button type="button" id="close">Close this tab</button>
+    <div class="foot">XT Launcher never sees your password.</div>
+  </main>
+  <script>
+    var b = document.getElementById("close");
+    b.addEventListener("click", function () {
+      window.close();
+      b.textContent = "You can close this tab now";
+      b.disabled = true;
+    });
+  </script>
+</body>
+</html>

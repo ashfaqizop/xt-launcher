@@ -27,6 +27,30 @@ import settings from '@material-symbols/svg-400/rounded/settings.svg?raw';
 import cropSquare from '@material-symbols/svg-400/rounded/crop_square.svg?raw';
 import wallpaper from '@material-symbols/svg-400/rounded/wallpaper.svg?raw';
 
+import i_image from '@material-symbols/svg-400/rounded/image.svg?raw';
+import i_extension from '@material-symbols/svg-400/rounded/extension.svg?raw';
+import i_build from '@material-symbols/svg-400/rounded/build.svg?raw';
+import i_storage from '@material-symbols/svg-400/rounded/storage.svg?raw';
+import i_drag from '@material-symbols/svg-400/rounded/drag_indicator.svg?raw';
+import i_search from '@material-symbols/svg-400/rounded/search.svg?raw';
+import i_chevronLeft from '@material-symbols/svg-400/rounded/chevron_left.svg?raw';
+import i_chevronRight from '@material-symbols/svg-400/rounded/chevron_right.svg?raw';
+import i_palette from '@material-symbols/svg-400/rounded/palette.svg?raw';
+import i_upload from '@material-symbols/svg-400/rounded/upload.svg?raw';
+import i_schedule from '@material-symbols/svg-400/rounded/schedule.svg?raw';
+import i_memory from '@material-symbols/svg-400/rounded/memory.svg?raw';
+import i_tune from '@material-symbols/svg-400/rounded/tune.svg?raw';
+import i_gallery from '@material-symbols/svg-400/rounded/photo_library.svg?raw';
+import i_clean from '@material-symbols/svg-400/rounded/cleaning_services.svg?raw';
+import i_visibility from '@material-symbols/svg-400/rounded/visibility.svg?raw';
+import i_verified from '@material-symbols/svg-400/rounded/verified.svg?raw';
+import i_warning from '@material-symbols/svg-400/rounded/warning.svg?raw';
+import i_history from '@material-symbols/svg-400/rounded/history.svg?raw';
+import i_sort from '@material-symbols/svg-400/rounded/sort.svg?raw';
+import i_hardDrive from '@material-symbols/svg-400/rounded/hard_drive.svg?raw';
+import i_addPhoto from '@material-symbols/svg-400/rounded/add_photo_alternate.svg?raw';
+import i_checkCircle from '@material-symbols/svg-400/rounded/check_circle.svg?raw';
+
 export const icons = {
   add,
   back: arrowBack,
@@ -54,6 +78,29 @@ export const icons = {
   settings,
   maximize: cropSquare,
   wallpaper,
+  image: i_image,
+  extension: i_extension,
+  build: i_build,
+  storage: i_storage,
+  drag: i_drag,
+  search: i_search,
+  chevronLeft: i_chevronLeft,
+  chevronRight: i_chevronRight,
+  palette: i_palette,
+  upload: i_upload,
+  schedule: i_schedule,
+  memory: i_memory,
+  tune: i_tune,
+  gallery: i_gallery,
+  clean: i_clean,
+  visibility: i_visibility,
+  verified: i_verified,
+  warning: i_warning,
+  history: i_history,
+  sort: i_sort,
+  hardDrive: i_hardDrive,
+  addPhoto: i_addPhoto,
+  checkCircle: i_checkCircle,
 } as const;
 
 export type IconName = keyof typeof icons;

@@ -33,6 +33,12 @@ export interface Profile {
   playMs?: number;
   /** When it was last played (epoch ms) */
   lastPlayed?: number;
+  /** Icon: a block id from lib/blocks, "image" for an uploaded picture, empty for the default */
+  icon?: string;
+  /** The uploaded picture (a small data URL) when icon is "image" */
+  iconImage?: string;
+  /** Accent colour (hex); empty for the theme default */
+  accent?: string;
 }
 
 export const ACCOUNT_LABEL: Record<AccountType, string> = {
@@ -181,6 +187,22 @@ export function formatPlaytime(ms: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h ? h + 'h ' + m + 'm' : m + 'm';
+}
+
+/** Move a profile to a new position in the list. */
+export function moveProfile(from: number, to: number) {
+  move(data.profiles, from, to);
+}
+
+/** Move an account to a new position in the list. */
+export function moveAccount(from: number, to: number) {
+  move(data.accounts, from, to);
+}
+
+function move<T>(list: T[], from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return;
+  const [item] = list.splice(from, 1);
+  list.splice(to, 0, item);
 }
 
 export function deleteProfile(id: string) {

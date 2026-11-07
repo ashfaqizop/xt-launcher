@@ -61,7 +61,7 @@ pub async fn ensure(app: &AppHandle, paths: &Paths, component: &str) -> Result<P
     let dir = paths.runtimes().join(component);
     let java = dir.join("bin").join("java.exe");
     let marker = dir.join(".xt-complete");
-    if marker.exists() && java.exists() {
+    if !http::verify_all() && marker.exists() && java.exists() {
         return Ok(java);
     }
 
