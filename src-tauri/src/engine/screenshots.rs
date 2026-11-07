@@ -35,7 +35,7 @@ fn folder(app: &AppHandle, profile_id: &str) -> Result<PathBuf, String> {
 
 /// The full path of one screenshot, refusing anything that isn't a plain image file name.
 fn file_path(app: &AppHandle, profile_id: &str, name: &str) -> Result<PathBuf, String> {
-    if name.is_empty() || name.contains(|c: char| c == '/' || c == '\') || name == ".." || !is_image(name) {
+    if name.is_empty() || name.contains(|c: char| c == '/' || c == '\\') || name == ".." || !is_image(name) {
         return Err("invalid file name".to_string());
     }
     Ok(folder(app, profile_id)?.join(name))
