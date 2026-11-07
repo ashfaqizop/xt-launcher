@@ -31,9 +31,23 @@ getrandom = "0.2"
 keyring = { version = "3", features = ["windows-native"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_System_JobObjects",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+] }
+
+# A conventional optimised build. The previous size-squeezed profile (opt-level "s",
+# stripped, panic=abort) made Windows Defender's ML scanner flag the app as a trojan.
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
-strip = true
+panic = "unwind"
+strip = false

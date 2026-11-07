@@ -21,6 +21,12 @@
 - The memory slider tells you how much RAM is free right now.
 - First run: on a PC with 8 GB of memory or less, XT Launcher suggests XT Optimized with a lower memory setting.
 
+### Safer
+- XT Launcher no longer starts helper programs in the background (PowerShell, reg, taskkill). Hardware detection, the graphics card setting, stopping the game and the Recycle Bin all use Windows directly, which also fixes Windows Defender wrongly flagging the installer.
+- The game runs on javaw, so no console window is ever created.
+- Every program the launcher downloads and runs is checked first: authlib-injector against its published SHA-256, Forge and NeoForge installers against the checksums on their Maven servers.
+- Opening the game folder with no profile no longer creates an empty "default" folder.
+
 ## 0.1.2
 
 ### Improved

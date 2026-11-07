@@ -5,7 +5,7 @@ use super::crash::{self, CrashInfo};
 use super::auth;
 use super::launch::{self, Options};
 use super::paths::Paths;
-use super::{http, install, java, loaders, mods};
+use super::{http, install, java, loaders, mods, win};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -30,6 +30,8 @@ pub struct Session {
     /// The launcher window is hidden while the game runs: don't stream logs to it
     hidden: AtomicBool,
     pid: Mutex<Option<u32>>,
+    /// The game's process tree (Stop ends all of it)
+    job: Mutex<Option<win::Job>>,
     logs: Mutex<VecDeque<LogLine>>,
 }
 
@@ -170,33 +172,15 @@ where
     }
 }
 
-#[cfg(windows)]
+/// Windows' per-app graphics preference for the Java that runs the game.
 fn apply_gpu_preference(java: &Path, preference: Option<&str>) {
-    use std::os::windows::process::CommandExt;
-
-    let key = r"HKCU\Software\Microsoft\DirectX\UserGpuPreferences";
-    let exe = java.to_string_lossy().to_string();
     let value = match preference {
         Some("high") => Some("GpuPreference=2;"),
         Some("low") => Some("GpuPreference=1;"),
         _ => None,
     };
-
-    let mut cmd = std::process::Command::new("reg");
-    match value {
-        Some(v) => {
-            cmd.args(["add", key, "/v", exe.as_str(), "/t", "REG_SZ", "/d", v, "/f"]);
-        }
-        None => {
-            cmd.args(["delete", key, "/v", exe.as_str(), "/f"]);
-        }
-    }
-    cmd.creation_flags(0x0800_0000);
-    let _ = cmd.output();
+    win::set_gpu_preference(java, value);
 }
-
-#[cfg(not(windows))]
-fn apply_gpu_preference(_java: &Path, _preference: Option<&str>) {}
 
 /// A launcher message in the game log ("[XT] ..."), shown alongside the game's own output.
 fn push_log(app: &AppHandle, text: &str) {
@@ -356,6 +340,8 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
 
     install::check_cancel()?;
     emit_state(app, "installing", Some("Launching Minecraft".to_string()), None, None);
+    // javaw.exe is the windowed Java: no console appears and none has to be hidden
+    let java_exe = win::windowless_java(&java_exe);
     apply_gpu_preference(&java_exe, req.gpu.as_deref());
 
     // Start the game
@@ -367,7 +353,10 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(windows)]
-    cmd.creation_flags(0x0800_0000); // no console window
+    if !is_javaw(&java_exe) {
+        // A custom java.exe with no javaw.exe beside it: keep its console out of sight
+        cmd.creation_flags(0x0800_0000);
+    }
     let mut child = cmd
         .spawn()
         .with_context(|| format!("starting Java at {}", java_exe.display()))?;
@@ -375,6 +364,7 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     {
         let session = app.state::<Session>();
         *session.pid.lock().unwrap() = child.id();
+        *session.job.lock().unwrap() = win::job_for(&child);
         session.killed.store(false, Ordering::SeqCst);
     }
     emit_state(app, "running", None, None, None);
@@ -408,6 +398,7 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     // Wrap up
     let session = app.state::<Session>();
     *session.pid.lock().unwrap() = None;
+    session.job.lock().unwrap().take();
     let killed = session.killed.load(Ordering::SeqCst);
     let code = status.code();
 
@@ -481,25 +472,27 @@ pub fn kill_game(session: State<'_, Session>) -> Result<(), String> {
         return Ok(());
     };
     session.killed.store(true, Ordering::SeqCst);
-    kill_process_tree(pid)
+    // End the whole process tree through its job; fall back to the game process itself
+    if let Some(job) = session.job.lock().unwrap().as_ref() {
+        if job.terminate() {
+            return Ok(());
+        }
+    }
+    if win::terminate_pid(pid) {
+        Ok(())
+    } else {
+        Err("Couldn't stop the game".to_string())
+    }
 }
 
 #[cfg(windows)]
-fn kill_process_tree(pid: u32) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    let pid_text = pid.to_string();
-    std::process::Command::new("taskkill")
-        .args(["/PID", pid_text.as_str(), "/T", "/F"])
-        .creation_flags(0x0800_0000)
-        .output()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+fn is_javaw(java: &Path) -> bool {
+    java.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.eq_ignore_ascii_case("javaw.exe"))
+        .unwrap_or(false)
 }
 
-#[cfg(not(windows))]
-fn kill_process_tree(_pid: u32) -> Result<(), String> {
-    Err("Stopping the game is only supported on Windows".to_string())
-}
 
 #[tauri::command]
 pub fn get_logs(session: State<'_, Session>) -> Vec<LogLine> {
@@ -566,22 +559,28 @@ pub async fn list_versions(app: AppHandle, snapshots: bool, old: bool) -> Result
     })
 }
 
-/// Open a launcher folder in Explorer. `kind` is "root", "game" or "mods".
+/// Open a launcher folder in Explorer. `kind` is "root", "game", "mods" or "screenshots".
 #[tauri::command]
 pub fn open_dir(app: AppHandle, kind: String, profile_id: Option<String>) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
     let paths = Paths::new(&app).map_err(|e| e.to_string())?;
-    let profile = profile_id.unwrap_or_else(|| "default".to_string());
+    let profile = profile_id.filter(|p| !p.trim().is_empty());
+    let instance = || {
+        profile
+            .as_deref()
+            .map(|p| paths.instance(p))
+            .ok_or_else(|| "Create a profile first".to_string())
+    };
     let dir = match kind.as_str() {
         "root" => paths.root.clone(),
-        "game" => paths.instance(&profile),
-        "mods" => paths.instance(&profile).join("mods"),
-        "screenshots" => paths.instance(&profile).join("screenshots"),
+        "game" => instance()?,
+        "mods" => instance()?.join("mods"),
+        "screenshots" => instance()?.join("screenshots"),
         other => return Err(format!("unknown folder '{other}'")),
     };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::process::Command::new("explorer")
-        .arg(&dir)
-        .spawn()
-        .map(|_| ())
+    app.opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<&str>)
         .map_err(|e| e.to_string())
 }

@@ -12,13 +12,16 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Azure application (client) id for Microsoft sign-in. Fill this in once the app is
 /// registered; until then the UI lets the user paste their own id.
 pub const BUILTIN_MS_CLIENT_ID: &str = "";
 
 const INJECTOR_VERSION: &str = "1.2.8";
+/// SHA-1 of authlib-injector 1.2.8. Its SHA-256 (9c7f4343e6c82034958ffb48c14a2cb0c85928be7283103ce17da00c6d5a7b10)
+/// matches the one published at https://authlib-injector.yushi.moe/artifact/56.json
+const INJECTOR_SHA1: &str = "0e0e66d8a4f91a26f33b9c09f5cdffce4a11f0b8";
 const INJECTOR_URL: &str =
     "https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.8/authlib-injector-1.2.8.jar";
 
@@ -142,9 +145,17 @@ async fn run_ely_login(app: &AppHandle, state: &AuthState) -> Result<AccountResu
 /// Sign in with Ely.by: opens the browser (via the UI), waits for the authorization.
 #[tauri::command]
 pub async fn ely_login(app: AppHandle, state: State<'_, AuthState>) -> Result<AccountResult, String> {
-    run_ely_login(&app, &state)
+    let result = run_ely_login(&app, &state)
         .await
-        .map_err(|e| format!("{e:#}"))
+        .map_err(|e| format!("{e:#}"));
+    // Come back to the front once the browser part is done
+    if result.is_ok() {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }
+    result
 }
 
 /// Forget the stored tokens of a removed account.
@@ -167,7 +178,11 @@ async fn ensure_injector(paths: &Paths) -> Result<PathBuf> {
     let dest = paths
         .cache()
         .join(format!("authlib-injector-{INJECTOR_VERSION}.jar"));
-    http::download(INJECTOR_URL, &dest, None, None).await?;
+    // Only ever load the exact, published build into the game
+    if http::sha1_of(&dest).await.is_some_and(|got| got != INJECTOR_SHA1) {
+        let _ = tokio::fs::remove_file(&dest).await;
+    }
+    http::download(INJECTOR_URL, &dest, Some(INJECTOR_SHA1), None).await?;
     Ok(dest)
 }
 

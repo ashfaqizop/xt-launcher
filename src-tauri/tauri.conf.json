@@ -58,8 +58,12 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "publisher": "XT",
+    "publisher": "XT Launcher",
+    "copyright": "Copyright (c) 2026 XT Launcher. Open source: github.com/ashfaqizop/xt-launcher",
+    "category": "Game",
+    "homepage": "https://github.com/ashfaqizop/xt-launcher",
     "shortDescription": "A clean, fast Minecraft Java launcher",
+    "longDescription": "XT Launcher installs and launches Minecraft: Java Edition with Vanilla, Fabric, Quilt, Forge and NeoForge, with Ely.by and offline accounts.",
     "windows": {
       "nsis": {
         "installMode": "currentUser",

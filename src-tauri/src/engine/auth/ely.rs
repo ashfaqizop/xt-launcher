@@ -147,25 +147,32 @@ fn parse_callback(target: &str, expected_state: &str) -> Option<Result<String>> 
 fn callback_page(ok: bool) -> String {
     const TEMPLATE: &str = include_str!("callback.html");
     const LOGO: &[u8] = include_bytes!("../../../../src/assets/flame.png");
+    // Bricolage Grotesque (SIL Open Font License), the launcher's own typeface
+    const FONT: &[u8] = include_bytes!("bricolage.woff2");
 
-    let (heading, message, color, icon) = if ok {
+    let (state, heading, message, color, icon) = if ok {
         (
+            "ok",
             "You're connected",
-            "Ely.by is linked to XT Launcher. You can close this tab and head back to the launcher.",
-            "#45b36b",
-            "M5 12.5l4.5 4.5L19 7",
+            "Ely.by is linked to XT Launcher. Head back to the launcher, your account is ready to play.",
+            "#3ccf7a",
+            "M5.5 12.5l4.2 4.2L18.5 7.5",
         )
     } else {
         (
+            "fail",
             "Sign-in didn't finish",
             "Nothing was changed. Go back to XT Launcher and try signing in again.",
-            "#e5594b",
-            "M6 6l12 12M18 6L6 18",
+            "#ef5350",
+            "M7 7l10 10M17 7L7 17",
         )
     };
+    let font = format!("data:font/woff2;base64,{}", base64::engine::general_purpose::STANDARD.encode(FONT));
     let logo = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(LOGO));
     TEMPLATE
         .replace("{{STATE_COLOR}}", color)
+        .replace("{{STATE}}", state)
+        .replace("{{FONT}}", &font)
         .replace("{{HEADING}}", heading)
         .replace("{{MESSAGE}}", message)
         .replace("{{ICON_PATH}}", icon)

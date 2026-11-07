@@ -4,7 +4,7 @@
 
 use super::install as downloads;
 use super::paths::Paths;
-use super::{http, java};
+use super::{http, java, win};
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::process::Stdio;
@@ -189,10 +189,13 @@ async fn run_plan(app: &AppHandle, paths: &Paths, mc: &str, plan: Plan) -> Resul
 
     let dir = paths.cache().join("installers");
     let jar = dir.join(format!("{}-installer.jar", plan.id));
-    if http::verify_all() {
+    // Every installer on the Forge and NeoForge Maven servers has a published SHA-1:
+    // a cached or downloaded installer only runs if it matches.
+    let sha1 = installer_sha1(&plan.url).await?;
+    if http::verify_all() || http::sha1_of(&jar).await.is_some_and(|got| !got.eq_ignore_ascii_case(&sha1)) {
         let _ = tokio::fs::remove_file(&jar).await;
     }
-    http::download(&plan.url, &jar, None, None).await?;
+    http::download(&plan.url, &jar, Some(&sha1), None).await?;
 
     // The installers expect a launcher_profiles.json next to libraries/ and versions/
     let profiles = paths.root.join("launcher_profiles.json");
@@ -200,6 +203,7 @@ async fn run_plan(app: &AppHandle, paths: &Paths, mc: &str, plan: Plan) -> Resul
         tokio::fs::write(&profiles, br#"{"profiles":{}}"#).await?;
     }
 
+    let java_exe = win::windowless_java(&java_exe);
     let mut cmd = tokio::process::Command::new(&java_exe);
     cmd.arg("-jar")
         .arg(&jar)
@@ -208,7 +212,14 @@ async fn run_plan(app: &AppHandle, paths: &Paths, mc: &str, plan: Plan) -> Resul
         .current_dir(&dir)
         .stdin(Stdio::null());
     #[cfg(windows)]
-    cmd.creation_flags(0x0800_0000);
+    if java_exe
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| !n.eq_ignore_ascii_case("javaw.exe"))
+        .unwrap_or(true)
+    {
+        cmd.creation_flags(0x0800_0000);
+    }
 
     let output = cmd
         .output()
@@ -223,6 +234,20 @@ async fn run_plan(app: &AppHandle, paths: &Paths, mc: &str, plan: Plan) -> Resul
         return Err(anyhow!("The {} installer failed:\n{tail}", plan.label));
     }
     Ok(plan.id)
+}
+
+/// The SHA-1 the Maven server publishes next to an installer (`<url>.sha1`).
+async fn installer_sha1(url: &str) -> Result<String> {
+    let bytes = http::get_bytes(&format!("{url}.sha1"))
+        .await
+        .context("fetching the installer checksum")?;
+    let text = String::from_utf8_lossy(&bytes);
+    let hash = text.split_whitespace().next().unwrap_or("").to_lowercase();
+    if hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(hash)
+    } else {
+        Err(anyhow!("the installer has no valid checksum on the server"))
+    }
 }
 
 fn local_fallback(paths: &Paths, kind: &str, mc: &str) -> Option<String> {

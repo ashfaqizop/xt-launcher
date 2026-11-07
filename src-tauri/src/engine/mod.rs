@@ -17,3 +17,4 @@ pub mod screenshots;
 pub mod session;
 pub mod storage;
 pub mod system;
+mod win;

@@ -2,8 +2,8 @@
 //! Used by Settings so the choices reflect the machine instead of generic presets.
 
 use super::paths::Paths;
+use super::win;
 use serde::Serialize;
-use serde_json::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
@@ -61,53 +61,26 @@ fn is_virtual_adapter(name: &str) -> bool {
         .any(|k| n.contains(k))
 }
 
-#[cfg(windows)]
+/// Installed memory and the graphics cards, read straight from Windows (no helper programs).
 async fn query_hardware() -> (u64, Vec<Gpu>) {
-    use std::process::Stdio;
-
-    let script = "$g = @(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }); \
-                  $m = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; \
-                  @{ gpus = $g; mem = $m } | ConvertTo-Json -Compress";
-    let mut cmd = tokio::process::Command::new("powershell");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    cmd.creation_flags(0x0800_0000);
-
-    let Ok(output) = cmd.output().await else {
-        return (0, Vec::new());
-    };
-    let Ok(json) = serde_json::from_slice::<Value>(&output.stdout) else {
-        return (0, Vec::new());
-    };
-
-    let memory_mb = json.get("mem").and_then(|m| m.as_u64()).unwrap_or(0) / (1024 * 1024);
-    let names: Vec<String> = match json.get("gpus") {
-        Some(Value::Array(list)) => list
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .collect(),
-        Some(Value::String(one)) => vec![one.clone()],
-        _ => Vec::new(),
-    };
-
-    let mut seen = HashSet::new();
-    let gpus = names
-        .into_iter()
-        .map(|n| n.trim().to_string())
-        .filter(|n| !n.is_empty() && !is_virtual_adapter(n) && seen.insert(n.clone()))
-        .map(|name| Gpu {
-            integrated: is_integrated(&name),
-            name,
-        })
-        .collect();
-    (memory_mb, gpus)
-}
-
-#[cfg(not(windows))]
-async fn query_hardware() -> (u64, Vec<Gpu>) {
-    (0, Vec::new())
+    tokio::task::spawn_blocking(|| {
+        let memory_mb = win::memory()
+            .map(|(total, _)| total / (1024 * 1024))
+            .unwrap_or(0);
+        let mut seen = HashSet::new();
+        let gpus = win::display_adapters()
+            .into_iter()
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty() && !is_virtual_adapter(n) && seen.insert(n.clone()))
+            .map(|name| Gpu {
+                integrated: is_integrated(&name),
+                name,
+            })
+            .collect();
+        (memory_mb, gpus)
+    })
+    .await
+    .unwrap_or((0, Vec::new()))
 }
 
 // ---------------------------------------------------------------------------
@@ -272,48 +245,8 @@ pub struct MemoryStatus {
     pub free_mb: u64,
 }
 
-#[cfg(windows)]
 fn read_memory() -> Option<(u64, u64)> {
-    #[repr(C)]
-    struct MemoryStatusEx {
-        length: u32,
-        memory_load: u32,
-        total_phys: u64,
-        avail_phys: u64,
-        total_page_file: u64,
-        avail_page_file: u64,
-        total_virtual: u64,
-        avail_virtual: u64,
-        avail_extended_virtual: u64,
-    }
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GlobalMemoryStatusEx(buffer: *mut MemoryStatusEx) -> i32;
-    }
-
-    let mut status = MemoryStatusEx {
-        length: std::mem::size_of::<MemoryStatusEx>() as u32,
-        memory_load: 0,
-        total_phys: 0,
-        avail_phys: 0,
-        total_page_file: 0,
-        avail_page_file: 0,
-        total_virtual: 0,
-        avail_virtual: 0,
-        avail_extended_virtual: 0,
-    };
-    // SAFETY: `status` is a correctly sized, initialised MEMORYSTATUSEX with its length set
-    let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
-    if ok == 0 {
-        return None;
-    }
-    Some((status.total_phys / (1024 * 1024), status.avail_phys / (1024 * 1024)))
-}
-
-#[cfg(not(windows))]
-fn read_memory() -> Option<(u64, u64)> {
-    None
+    win::memory().map(|(total, free)| (total / (1024 * 1024), free / (1024 * 1024)))
 }
 
 /// Installed and currently free memory, in MB.

@@ -2,6 +2,7 @@
 //! Everything is confined to `<instance>/screenshots`.
 
 use super::paths::Paths;
+use super::win;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
@@ -98,11 +99,10 @@ pub async fn read_screenshot(app: AppHandle, profile_id: String, name: String) -
 /// Open a screenshot in the default image viewer.
 #[tauri::command]
 pub fn open_screenshot(app: AppHandle, profile_id: String, name: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
     let path = file_path(&app, &profile_id, &name)?;
-    std::process::Command::new("explorer")
-        .arg(&path)
-        .spawn()
-        .map(|_| ())
+    app.opener()
+        .open_path(path.to_string_lossy().to_string(), None::<&str>)
         .map_err(|e| e.to_string())
 }
 
@@ -115,25 +115,12 @@ pub async fn delete_screenshot(app: AppHandle, profile_id: String, name: String)
         return Ok(());
     }
 
-    #[cfg(windows)]
-    {
-        use std::process::Stdio;
-        let script = "Add-Type -AssemblyName Microsoft.VisualBasic; \
-                      [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:XT_FILE, \
-                      [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, \
-                      [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)";
-        let mut cmd = tokio::process::Command::new("powershell");
-        cmd.args(["-NoProfile", "-NonInteractive", "-Command", script])
-            .env("XT_FILE", &path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        cmd.creation_flags(0x0800_0000);
-        if let Ok(status) = cmd.status().await {
-            if status.success() && !path.exists() {
-                return Ok(());
-            }
-        }
+    let target = path.clone();
+    let recycled = tokio::task::spawn_blocking(move || win::recycle(&target))
+        .await
+        .unwrap_or(false);
+    if recycled && !path.exists() {
+        return Ok(());
     }
 
     tokio::fs::remove_file(&path).await.map_err(|e| e.to_string())
