@@ -18,8 +18,15 @@ struct Plan {
 }
 
 /// Install (or reuse) a Forge / NeoForge build for `mc` and return its version id.
-pub async fn install(app: &AppHandle, paths: &Paths, kind: &str, mc: &str) -> Result<String> {
-    match plan(kind, mc).await {
+/// `build` pins a specific loader build; otherwise the recommended one is used.
+pub async fn install(
+    app: &AppHandle,
+    paths: &Paths,
+    kind: &str,
+    mc: &str,
+    build: Option<&str>,
+) -> Result<String> {
+    match plan(kind, mc, build).await {
         Ok(plan) => run_plan(app, paths, mc, plan).await,
         // Offline: reuse a build installed earlier for this Minecraft version
         Err(e) => local_fallback(paths, kind, mc).ok_or(e),
@@ -42,8 +49,35 @@ fn neoforge_prefix(mc: &str) -> String {
     format!("{}.", parts.join("."))
 }
 
+/// The Minecraft version a NeoForge build is for: `21.1.172` -> `1.21.1`,
+/// `21.0.5` -> `1.21`, `26.3.0.101` -> `26.3`, `26.1.2.126` -> `26.1.2`.
+pub(super) fn neoforge_mc(build: &str) -> Option<String> {
+    let core = build.split('-').next()?;
+    let p: Vec<&str> = core.split('.').collect();
+    if p.len() < 3 {
+        return None;
+    }
+    let major: u32 = p[0].parse().ok()?;
+    if major < 25 {
+        Some(if p[1] == "0" {
+            format!("1.{}", p[0])
+        } else {
+            format!("1.{}.{}", p[0], p[1])
+        })
+    } else {
+        if p.len() < 4 {
+            return None;
+        }
+        Some(if p[2] == "0" {
+            format!("{}.{}", p[0], p[1])
+        } else {
+            format!("{}.{}.{}", p[0], p[1], p[2])
+        })
+    }
+}
+
 /// Numeric ordering key: `26.3.0.101` -> [26, 3, 0, 101]
-fn version_key(version: &str) -> Vec<u64> {
+pub(super) fn version_key(version: &str) -> Vec<u64> {
     version
         .split('-')
         .next()
@@ -53,7 +87,10 @@ fn version_key(version: &str) -> Vec<u64> {
         .collect()
 }
 
-async fn plan(kind: &str, mc: &str) -> Result<Plan> {
+async fn plan(kind: &str, mc: &str, build: Option<&str>) -> Result<Plan> {
+    if let Some(version) = build {
+        return Ok(pinned_plan(kind, mc, version)?);
+    }
     match kind {
         "forge" => {
             let bytes = http::get_bytes(
@@ -111,6 +148,26 @@ async fn plan(kind: &str, mc: &str) -> Result<Plan> {
                 label: "NeoForge",
             })
         }
+        other => Err(anyhow!("{other} is not an installer-based loader")),
+    }
+}
+
+fn pinned_plan(kind: &str, mc: &str, version: &str) -> Result<Plan> {
+    match kind {
+        "forge" => Ok(Plan {
+            id: format!("{mc}-forge-{version}"),
+            url: format!(
+                "https://maven.minecraftforge.net/net/minecraftforge/forge/{mc}-{version}/forge-{mc}-{version}-installer.jar"
+            ),
+            label: "Forge",
+        }),
+        "neoforge" => Ok(Plan {
+            id: format!("neoforge-{version}"),
+            url: format!(
+                "https://maven.neoforged.net/releases/net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar"
+            ),
+            label: "NeoForge",
+        }),
         other => Err(anyhow!("{other} is not an installer-based loader")),
     }
 }

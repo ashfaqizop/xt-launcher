@@ -87,6 +87,9 @@ pub struct LaunchRequest {
     pub profile_id: String,
     /// vanilla | fabric | quilt | forge | neoforge
     pub loader: String,
+    /// A specific loader build; empty or missing means the recommended one
+    #[serde(default)]
+    pub loader_version: Option<String>,
     /// A Minecraft version id, or "latest" for the newest release
     pub mc: String,
     pub account: AccountInfo,
@@ -242,7 +245,10 @@ async fn run_launch(app: &AppHandle, req: LaunchRequest) -> Result<()> {
     };
     let version_id = match req.loader.as_str() {
         "vanilla" => mc_id.clone(),
-        kind => loaders::install(app, &paths, kind, &mc_id).await?,
+        kind => {
+            let build = req.loader_version.as_deref().map(str::trim).filter(|v| !v.is_empty());
+            loaders::install(app, &paths, kind, &mc_id, build).await?
+        }
     };
 
     if let Some(tier) = req.xt_tier.as_deref() {

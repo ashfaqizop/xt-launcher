@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectValue } from '../lib/actions';
   import { onMount } from 'svelte';
   import Icon from '../lib/Icon.svelte';
   import Panel from './Panel.svelte';
@@ -129,7 +130,7 @@
         <div class="row">
           <span class="label">Java</span>
           <m3e-form-field variant="outlined" class="ctl">
-            <m3e-select value={javaChoice} aria-label="Java runtime" onchange={onJava}>
+            <m3e-select use:selectValue={javaChoice} aria-label="Java runtime" onchange={onJava}>
               <m3e-option value="auto">Automatic (recommended)</m3e-option>
               {#each system.javas as j (j.path)}
                 <m3e-option value={j.path}>Java {j.major} · {j.vendor}{j.managed ? ' (XT)' : ''}</m3e-option>
@@ -184,7 +185,7 @@
           <span class="label">Graphics card</span>
           {#if hasChoice}
             <m3e-form-field variant="outlined" class="ctl">
-              <m3e-select value={settings.gpu} aria-label="Graphics card" onchange={(e: Event) => (settings.gpu = val(e) as typeof settings.gpu)}>
+              <m3e-select use:selectValue={settings.gpu} aria-label="Graphics card" onchange={(e: Event) => (settings.gpu = val(e) as typeof settings.gpu)}>
                 <m3e-option value="default">Let Windows decide</m3e-option>
                 {#each discrete as g (g.name)}
                   <m3e-option value="high">{g.name}</m3e-option>
@@ -272,7 +273,7 @@
         <div class="row">
           <span class="label">After starting Minecraft</span>
           <m3e-form-field variant="outlined" class="ctl">
-            <m3e-select value={settings.afterLaunch} aria-label="After starting Minecraft" onchange={(e: Event) => (settings.afterLaunch = val(e) as typeof settings.afterLaunch)}>
+            <m3e-select use:selectValue={settings.afterLaunch} aria-label="After starting Minecraft" onchange={(e: Event) => (settings.afterLaunch = val(e) as typeof settings.afterLaunch)}>
               <m3e-option value="tray">Minimize launcher</m3e-option>
               <m3e-option value="close">Close launcher</m3e-option>
               <m3e-option value="keep">Keep open</m3e-option>
@@ -294,7 +295,7 @@
         <div class="row">
           <span class="label">Language</span>
           <m3e-form-field variant="outlined" class="ctl">
-            <m3e-select value="en" disabled aria-label="Language">
+            <m3e-select use:selectValue={'en'} disabled aria-label="Language">
               <m3e-option value="en">English</m3e-option>
             </m3e-select>
           </m3e-form-field>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectValue } from '../lib/actions';
   import { onMount } from 'svelte';
   import Icon from '../lib/Icon.svelte';
   import Panel from './Panel.svelte';
@@ -17,7 +18,8 @@
     type Profile,
     type ProfileKind,
   } from '../lib/data.svelte';
-  import { loadVersionList } from '../lib/engine.svelte';
+  import { inTauri, loadVersionList } from '../lib/engine.svelte';
+  import { invoke } from '@tauri-apps/api/core';
   import { nav } from '../lib/nav.svelte';
   import { versions } from '../lib/versions.svelte';
   import { maxGameMemoryGiB } from '../lib/system.svelte';
@@ -25,6 +27,7 @@
   type ValueEl = HTMLElement & { value: string };
   type CheckEl = HTMLElement & { checked: boolean };
   const val = (e: Event) => (e.currentTarget as ValueEl).value;
+  const fmtCount = (n: number) => n.toLocaleString('en-US');
   const chk = (e: Event) => (e.currentTarget as CheckEl).checked;
 
   type Step = 'list' | 'choose' | 'edit';
@@ -79,6 +82,10 @@
       error = 'Give the profile a name.';
       return;
     }
+    if (mcUnsupported) {
+      error = `${LOADER_LABEL[draft.loader]} doesn't support Minecraft ${resolvedMc} yet. Pick another version.`;
+      return;
+    }
     saveProfile({
       ...draft,
       name,
@@ -106,7 +113,100 @@
     step = data.profiles.length ? 'list' : 'choose';
   }
 
-  const versionOptions = $derived(versions.list.filter((v) => v.kind === 'release' || snapshots));
+  // ---- What the chosen loader actually supports ----------------------------
+
+  interface Catalog {
+    games: string[];
+    builds: { version: string; stable: boolean }[];
+    recommended: string | null;
+  }
+  let catalog = $state<Catalog | null>(null);
+  let catalogFor = $state('');
+  let catalogLoading = $state(false);
+  let catalogError = $state('');
+
+  const loader = $derived(draft?.loader ?? 'vanilla');
+  const resolvedMc = $derived(draft ? (draft.mc === 'latest' ? versions.latestRelease : draft.mc) : '');
+
+  $effect(() => {
+    const l = loader;
+    const mc = resolvedMc;
+    if (l === 'vanilla' || !inTauri) {
+      catalog = null;
+      catalogError = '';
+      return;
+    }
+    const key = l + '|' + mc;
+    let alive = true;
+    catalogLoading = true;
+    catalogError = '';
+    invoke<Catalog>('loader_catalog', { loader: l, mc: mc || null })
+      .then((c) => {
+        if (!alive) return;
+        catalog = c;
+        catalogFor = key;
+      })
+      .catch((err) => {
+        if (!alive) return;
+        catalog = null;
+        catalogError = String(err);
+      })
+      .finally(() => alive && (catalogLoading = false));
+    return () => {
+      alive = false;
+    };
+  });
+
+  const supported = $derived(catalog ? new Set(catalog.games) : null);
+  /** Minecraft versions to offer: Mojang's list, narrowed to what the loader supports */
+  const versionOptions = $derived(
+    versions.list.filter((v) => (v.kind === 'release' || snapshots) && (!supported || supported.has(v.id))),
+  );
+  const latestSupported = $derived(!supported || !versions.latestRelease || supported.has(versions.latestRelease));
+  const mcUnsupported = $derived(!!supported && !!resolvedMc && !supported.has(resolvedMc));
+  const builds = $derived(catalog && catalogFor === loader + '|' + resolvedMc ? catalog.builds.slice(0, 80) : []);
+
+  /** The version folder the launcher will install, e.g. fabric-loader-0.20.1-26.3 */
+  function installedId(l: Loader, build: string, mc: string) {
+    switch (l) {
+      case 'fabric':
+        return `fabric-loader-${build}-${mc}`;
+      case 'quilt':
+        return `quilt-loader-${build}-${mc}`;
+      case 'forge':
+        return `${mc}-forge-${build}`;
+      case 'neoforge':
+        return `neoforge-${build}`;
+      default:
+        return mc;
+    }
+  }
+  const buildsKey = $derived(`${loader}|${resolvedMc}|${catalogLoading}|${builds.length}`);
+  const mcKey = $derived(`${loader}|${supported ? supported.size : 0}|${snapshots}`);
+
+  // If the loader doesn't support the chosen Minecraft version, move to the newest one it does
+  let switchedNote = $state('');
+  $effect(() => {
+    if (!draft || catalogLoading || !mcUnsupported) return;
+    const target = versionOptions[0]?.id;
+    if (!target) return;
+    switchedNote = `${LOADER_LABEL[draft.loader]} doesn't support ${resolvedMc} yet, so this profile uses ${target}, the newest version it supports.`;
+    setMc(target);
+  });
+
+  const effectiveBuild = $derived(draft?.loaderVersion || catalog?.recommended || '');
+
+  function setLoader(l: Loader) {
+    if (!draft) return;
+    switchedNote = '';
+    draft.loader = l;
+    draft.loaderVersion = '';
+  }
+  function setMc(mc: string) {
+    if (!draft) return;
+    draft.mc = mc;
+    draft.loaderVersion = '';
+  }
   const title = $derived(step === 'choose' ? 'New profile' : step === 'edit' ? (isNew ? 'New profile' : 'Edit profile') : 'Profiles');
   const tier = $derived(draft ? TEMPLATES.find((t) => t.kind === draft!.kind) : undefined);
 </script>
@@ -155,7 +255,7 @@
         {#if !isXt(draft)}
           <m3e-form-field variant="outlined" class="field">
             <label slot="label" for="p-loader">Loader</label>
-            <m3e-select id="p-loader" value={draft.loader} onchange={(e: Event) => draft && (draft.loader = val(e) as Loader)}>
+            <m3e-select id="p-loader" use:selectValue={draft.loader} onchange={(e: Event) => setLoader(val(e) as Loader)}>
               {#each LOADERS as l (l)}
                 <m3e-option value={l}>{LOADER_LABEL[l]}</m3e-option>
               {/each}
@@ -163,16 +263,57 @@
           </m3e-form-field>
         {/if}
 
+        {#key mcKey}
         <m3e-form-field variant="outlined" class="field">
           <label slot="label" for="p-mc">Minecraft version</label>
-          <m3e-select id="p-mc" value={draft.mc} onchange={(e: Event) => draft && (draft.mc = val(e))}>
-            <m3e-option value="latest">Latest release{versions.latestRelease ? ` (${versions.latestRelease})` : ''}</m3e-option>
+          <m3e-select id="p-mc" use:selectValue={draft.mc} onchange={(e: Event) => setMc(val(e))}>
+            {#if latestSupported}
+              <m3e-option value="latest">Latest release{versions.latestRelease ? ` (${versions.latestRelease})` : ''}</m3e-option>
+            {/if}
             {#each versionOptions as v (v.id)}
-              <m3e-option value={v.id}>{v.id}</m3e-option>
+              <m3e-option value={v.id}>{v.id}{v.kind === 'snapshot' ? '  ·  snapshot' : ''}</m3e-option>
             {/each}
           </m3e-select>
         </m3e-form-field>
+        {/key}
       </div>
+
+      {#if draft.loader !== 'vanilla'}
+        {#if !isXt(draft)}
+          {#key buildsKey}
+          <m3e-form-field variant="outlined" class="field">
+            <label slot="label" for="p-build">{LOADER_LABEL[draft.loader]} version</label>
+              <m3e-select
+                id="p-build"
+                use:selectValue={draft.loaderVersion || 'recommended'}
+                disabled={catalogLoading || mcUnsupported || !builds.length}
+                onchange={(e: Event) => draft && (draft.loaderVersion = val(e) === 'recommended' ? '' : val(e))}
+              >
+                <m3e-option value="recommended">
+                  {catalogLoading ? 'Loading versions…' : catalog?.recommended ? `Recommended (${catalog.recommended})` : 'Recommended'}
+                </m3e-option>
+                {#each builds as b (b.version)}
+                  <m3e-option value={b.version}>{b.version}{b.stable ? '' : '  ·  beta'}</m3e-option>
+                {/each}
+              </m3e-select>
+          </m3e-form-field>
+          {/key}
+        {/if}
+        <p class="build-note" class:bad={mcUnsupported || !!catalogError}>
+          {#if catalogError}
+            Couldn't load {LOADER_LABEL[draft.loader]} versions. Check your connection; the recommended build is used when you play.
+          {:else if mcUnsupported}
+            {LOADER_LABEL[draft.loader]} doesn't support Minecraft {resolvedMc} yet.
+          {:else if catalogLoading}
+            Checking what {LOADER_LABEL[draft.loader]} supports…
+          {:else if switchedNote}
+            {switchedNote}
+          {:else if catalog && effectiveBuild && resolvedMc}
+            Installs <span class="mono">{installedId(draft.loader, effectiveBuild, resolvedMc)}</span>
+            · {fmtCount(catalog.games.length)} Minecraft versions supported
+          {/if}
+        </p>
+      {/if}
 
       <label class="sw">
         <span>Include snapshots</span>
@@ -452,5 +593,20 @@
     margin: 0;
     color: var(--md-sys-color-error, #ffb4ab);
     font-size: 13px;
+  }
+  .build-note {
+    margin: -4px 4px 0;
+    min-height: 1.4em;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--md-sys-color-on-surface-variant, #bfb2ae);
+  }
+  .build-note.bad {
+    color: var(--md-sys-color-error, #ffb4ab);
+  }
+  .mono {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-sys-color-primary, #c23a24);
+    user-select: text;
   }
 </style>

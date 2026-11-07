@@ -28,7 +28,9 @@ export const GALLERY: GalleryItem[] = [
 export const BRAND_SEED = '#c23a24';
 
 /** Current wallpaper url and the seed colour extracted from it. */
-export const wp = $state({ url: xt, seed: null as string | null, hasCustom: false });
+export const DEFAULT_WALLPAPER = 'caves-and-cliffs';
+
+export const wp = $state({ url: cavesAndCliffs, seed: null as string | null, hasCustom: false });
 
 // ---- custom wallpaper storage (IndexedDB, a single blob) ------------------
 
@@ -92,7 +94,7 @@ let customUrl: string | null = null;
 /** Resolve settings.wallpaper to a url and refresh the extracted seed colour. */
 export async function applyWallpaper(id: string) {
   const mine = ++token;
-  let url = GALLERY.find((g) => g.id === id)?.url ?? xt;
+  let url = GALLERY.find((g) => g.id === id)?.url ?? cavesAndCliffs;
 
   if (id === 'custom') {
     const blob = await idbGet('wallpaper');
@@ -102,7 +104,7 @@ export async function applyWallpaper(id: string) {
       customUrl = URL.createObjectURL(blob);
       url = customUrl;
     } else {
-      settings.wallpaper = 'xt'; // the stored image is gone
+      settings.wallpaper = DEFAULT_WALLPAPER; // the stored image is gone
       return;
     }
   }

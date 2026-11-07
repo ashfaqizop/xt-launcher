@@ -1,6 +1,7 @@
 //! The launcher engine: version metadata, downloads, Java, launching and supervision.
 
 pub mod auth;
+pub mod catalog;
 mod crash;
 mod http;
 mod install;

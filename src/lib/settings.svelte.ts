@@ -32,7 +32,7 @@ export interface Settings {
 export const DEFAULTS: Settings = {
   themeMode: 'system',
   dynamicColor: true,
-  wallpaper: 'xt',
+  wallpaper: 'caves-and-cliffs',
   blur: 6,
   dim: 25,
   afterLaunch: 'tray',

@@ -275,6 +275,7 @@ export async function play() {
       req: {
         profileId: profile.id,
         loader: profile.loader,
+        loaderVersion: profile.loaderVersion || null,
         mc: profile.mc,
         account: { name: account.name, kind: account.type, id: account.id },
         msClientId: settings.msClientId || null,

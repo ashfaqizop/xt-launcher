@@ -21,6 +21,8 @@ export interface Profile {
   loader: Loader;
   /** A Minecraft version id, or "latest" for the newest release */
   mc: string;
+  /** A specific loader build (e.g. "0.20.1"); empty means the recommended one */
+  loaderVersion?: string;
   /** Per-profile memory override in MB (null = use the global setting) */
   ramMb?: number | null;
   /** Extra JVM arguments, space separated */
@@ -190,7 +192,8 @@ export function deleteProfile(id: string) {
 
 export function profileSubtitle(p: Profile) {
   const mc = p.mc === 'latest' ? versions.latestRelease || 'Latest release' : p.mc;
-  return `${LOADER_LABEL[p.loader]} · ${mc}`;
+  const loader = p.loader !== 'vanilla' && p.loaderVersion ? `${LOADER_LABEL[p.loader]} ${p.loaderVersion}` : LOADER_LABEL[p.loader];
+  return `${loader} · ${mc}`;
 }
 
 export const OFFLINE_NAME = /^[A-Za-z0-9_]{3,16}$/;

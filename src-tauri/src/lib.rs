@@ -38,6 +38,7 @@ pub fn run() {
             engine::auth::ely_login,
             engine::auth::forget_account,
             engine::system::system_info,
+            engine::catalog::loader_catalog,
         ])
         .run(tauri::generate_context!())
         .expect("error while running XT Launcher");
